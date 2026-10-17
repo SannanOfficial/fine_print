@@ -1,0 +1,50 @@
+# Runs one Fine Print crawl. Started by fineprint-crawl.timer.
+#
+# Install:
+#   sudo cp deploy/fineprint-crawl.service deploy/fineprint-crawl.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fineprint-crawl.timer
+#
+# Check:  systemctl list-timers fineprint-crawl.timer
+# Logs:   journalctl -u fineprint-crawl.service
+#
+# Adjust User, WorkingDirectory, EnvironmentFile and the node path to your server.
+
+[Unit]
+Description=Fine Print: check tracked terms for changes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=fineprint
+Group=fineprint
+WorkingDirectory=/srv/fine_print
+# Holds MONGODB_WRITE_URI. Only this service should be able to read it.
+EnvironmentFile=/etc/fineprint/crawler.env
+ExecStart=/usr/bin/node scripts/crawl.ts
+TimeoutStartSec=45min
+
+# Sandboxing: the crawler only needs outbound network access and nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=512M
+CPUQuota=50%

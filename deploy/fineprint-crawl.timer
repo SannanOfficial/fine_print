@@ -1,0 +1,14 @@
+# Twice a day, around 5 a.m. and 5 p.m. US Eastern (09:00 and 21:00 UTC),
+# each run starting at a random point within 30 minutes so we never hit
+# sites at a predictable second. Missed runs (server was down) run at boot.
+
+[Unit]
+Description=Fine Print: check tracked terms twice a day
+
+[Timer]
+OnCalendar=*-*-* 09,21:00:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

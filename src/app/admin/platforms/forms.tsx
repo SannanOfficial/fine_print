@@ -1,0 +1,348 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useActionState, useState, type ReactNode } from "react";
+import { Redline, RedlineLegend } from "@/components/Redline.tsx";
+import { MANUAL_REASONS } from "@/core/platforms.ts";
+import { describeStats } from "@/lib/format.ts";
+import {
+  addDocument,
+  addPlatform,
+  deleteDocument,
+  deletePlatform,
+  recordVersion,
+  updateDocument,
+  updatePlatform,
+  type DocumentState,
+  type DocumentValues,
+  type PlatformState,
+  type PlatformValues,
+  type RecordValues,
+  type SimpleState,
+} from "./actions.ts";
+
+function Message({ state }: { state: { ok: boolean; message: string } | null }) {
+  if (!state) return null;
+  return (
+    <p className={state.ok ? "form-ok" : "form-error"} role={state.ok ? "status" : "alert"}>
+      {state.message}
+    </p>
+  );
+}
+
+function Field({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      {hint && (
+        <p className="hint" id={`${id}-hint`}>
+          {hint}
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/* ---------- Platforms ---------- */
+
+export function PlatformForm({ slug, initial }: { slug?: string; initial: PlatformValues }) {
+  const [state, action, pending] = useActionState<PlatformState, FormData>(
+    slug ? updatePlatform.bind(null, slug) : addPlatform,
+    null,
+  );
+  const v = state?.values ?? initial;
+  return (
+    <form action={action} className="form" key={state?.key}>
+      {!slug && (
+        <Field
+          id="slug"
+          label="Short name"
+          hint={
+            <>
+              Used in the address, for example fineprint…/<b>simplepractice</b>. Lowercase letters, numbers and
+              hyphens. It can&rsquo;t be changed later.
+            </>
+          }
+        >
+          <input id="slug" name="slug" defaultValue={v.slug} required maxLength={60} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby="slug-hint" />
+        </Field>
+      )}
+      <Field id="name" label="Name">
+        <input id="name" name="name" defaultValue={v.name} required maxLength={80} />
+      </Field>
+      <Field id="kind" label="What it is" hint="Shown under the name, for example “Electronic health records (EHR)”.">
+        <input id="kind" name="kind" defaultValue={v.kind} required maxLength={120} aria-describedby="kind-hint" />
+      </Field>
+      <Field id="website" label="Official site">
+        <input id="website" name="website" type="url" defaultValue={v.website} required placeholder="https://" />
+      </Field>
+      <Message state={state} />
+      <button type="submit" className="button button-primary" disabled={pending}>
+        {pending ? "Saving…" : slug ? "Save changes" : "Add platform"}
+      </button>
+    </form>
+  );
+}
+
+/* ---------- Documents ---------- */
+
+export function DocumentForm({
+  platformSlug,
+  documentSlug,
+  initial,
+}: {
+  platformSlug: string;
+  documentSlug?: string;
+  initial: DocumentValues;
+}) {
+  const [state, action, pending] = useActionState<DocumentState, FormData>(
+    documentSlug ? updateDocument.bind(null, platformSlug, documentSlug) : addDocument.bind(null, platformSlug),
+    null,
+  );
+  const v = state?.values ?? initial;
+  const [mode, setMode] = useState(v.mode || "auto");
+  const [preset, setPreset] = useState(v.manualPreset || "blocked");
+
+  return (
+    <form action={action} className="form" key={state?.key}>
+      {!documentSlug && (
+        <Field id="doc-slug" label="Short name" hint="Used in the address, for example “terms-of-service”. It can’t be changed later.">
+          <input id="doc-slug" name="slug" defaultValue={v.slug} required maxLength={60} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby="doc-slug-hint" />
+        </Field>
+      )}
+      <Field id="title" label="Title">
+        <input id="title" name="title" defaultValue={v.title} required maxLength={120} placeholder="Terms of Service" />
+      </Field>
+      <Field id="audience" label="Who it applies to">
+        <select id="audience" name="audience" defaultValue={v.audience || "providers"}>
+          <option value="providers">Providers</option>
+          <option value="clients">Clients</option>
+          <option value="everyone">Everyone</option>
+        </select>
+      </Field>
+      <Field id="url" label="Public address" hint="Leave empty if it isn’t published anywhere (for example, only sent by email).">
+        <input id="url" name="url" type="url" defaultValue={v.url} placeholder="https://" aria-describedby="url-hint" />
+      </Field>
+
+      <fieldset>
+        <legend>How it is captured</legend>
+        <div className="choices">
+          <label className="check">
+            <input type="radio" name="mode" value="auto" checked={mode === "auto"} onChange={() => setMode("auto")} />
+            Automatically, twice a day
+          </label>
+          <label className="check">
+            <input type="radio" name="mode" value="manual" checked={mode === "manual"} onChange={() => setMode("manual")} />
+            By hand, here in the admin
+          </label>
+        </div>
+        {mode === "manual" && (
+          <Field id="manualPreset" label="Reason shown to readers">
+            <select id="manualPreset" name="manualPreset" value={preset} onChange={(e) => setPreset(e.target.value)}>
+              <option value="blocked">{MANUAL_REASONS.blocked}</option>
+              <option value="browser">{MANUAL_REASONS.browser}</option>
+              <option value="custom">Something else…</option>
+            </select>
+          </Field>
+        )}
+        {mode === "manual" && preset === "custom" && (
+          <Field id="manualCustom" label="Your reason">
+            <input id="manualCustom" name="manualCustom" defaultValue={v.manualCustom} maxLength={200} />
+          </Field>
+        )}
+      </fieldset>
+
+      <details className="advanced">
+        <summary>Where the text is on the page</summary>
+        <Field
+          id="selectors"
+          label="Read the text from"
+          hint="CSS selectors, one per line, tried in order. The first that matches is used. “main” and “article” fit most sites."
+        >
+          <textarea id="selectors" name="selectors" rows={3} defaultValue={v.selectors || "main\narticle\nbody"} aria-describedby="selectors-hint" />
+        </Field>
+        <Field id="remove" label="Leave out" hint="Optional. Selectors for parts inside it to skip, such as “nav” or “footer”, one per line.">
+          <textarea id="remove" name="remove" rows={2} defaultValue={v.remove} aria-describedby="remove-hint" />
+        </Field>
+        <Field id="redirectHosts" label="Other sites it may redirect to" hint="Optional. Host names, one per line.">
+          <textarea id="redirectHosts" name="redirectHosts" rows={2} defaultValue={v.redirectHosts} aria-describedby="redirectHosts-hint" />
+        </Field>
+        <label className="check">
+          <input type="checkbox" name="source" value="zendesk-api" defaultChecked={v.source === "zendesk-api"} />
+          This is a Zendesk help-centre article: read it through the help centre&rsquo;s public article API
+        </label>
+      </details>
+
+      <Message state={state} />
+      <button type="submit" className="button button-primary" disabled={pending}>
+        {pending ? "Saving…" : documentSlug ? "Save settings" : "Add document"}
+      </button>
+    </form>
+  );
+}
+
+/* ---------- Deleting ---------- */
+
+export function DeleteForm({
+  platformSlug,
+  documentSlug,
+  hint,
+}: {
+  platformSlug: string;
+  documentSlug?: string;
+  hint: string;
+}) {
+  const [state, action, pending] = useActionState<SimpleState, FormData>(
+    documentSlug ? deleteDocument.bind(null, platformSlug, documentSlug) : deletePlatform.bind(null, platformSlug),
+    null,
+  );
+  const word = documentSlug ?? platformSlug;
+  return (
+    <form action={action} className="form danger">
+      <p className="hint">{hint}</p>
+      <Field id="confirm" label={`Type “${word}” to confirm`}>
+        <input id="confirm" name="confirm" autoComplete="off" />
+      </Field>
+      <Message state={state} />
+      <button type="submit" className="button button-danger" disabled={pending}>
+        {documentSlug ? "Delete document" : "Delete platform"}
+      </button>
+    </form>
+  );
+}
+
+/* ---------- Recording a version ---------- */
+
+export function RecordForm({
+  platformSlug,
+  documentSlug,
+  hasUrl,
+  initial,
+  fromSubmission,
+}: {
+  platformSlug: string;
+  documentSlug: string;
+  hasUrl: boolean;
+  initial: RecordValues;
+  fromSubmission: string | null;
+}) {
+  const [state, action, pending] = useActionState(recordVersion.bind(null, platformSlug, documentSlug), null);
+  const v = state?.values ?? initial;
+  const preview = state?.preview;
+  // Editing the text after a preview means the preview no longer matches it.
+  const [editedAfter, setEditedAfter] = useState<number | null>(null);
+  const stale = editedAfter !== null && editedAfter === state?.key;
+
+  return (
+    <form action={action} className="form" key={state?.key}>
+      <input type="hidden" name="fetchedHash" value={v.fetchedHash} />
+      <input type="hidden" name="submissionId" value={v.submissionId} />
+      {fromSubmission && (
+        <p className="note">
+          Starting from submission <b>{fromSubmission}</b>. Remove anything that could identify the sender before you
+          record it. Recording marks the submission &ldquo;Added to the record&rdquo;.
+        </p>
+      )}
+
+      <fieldset>
+        <legend>1. Get the text</legend>
+        {hasUrl && (
+          <div className="form-actions">
+            <button type="submit" name="intent" value="fetch" className="button" disabled={pending} formNoValidate>
+              Fetch from the public page
+            </button>
+          </div>
+        )}
+        <Field id="page" label={hasUrl ? "Or take it from a saved page" : "Take it from a saved page"} hint="In your browser: Save page as… → “Webpage, HTML only”.">
+          <input id="page" name="page" type="file" accept=".html,.htm,text/html" aria-describedby="page-hint" />
+        </Field>
+        <button type="submit" name="intent" value="extract" className="button" disabled={pending} formNoValidate>
+          Take text from saved page
+        </button>
+      </fieldset>
+
+      <Field id="text" label="2. Check the text of the new version" hint="Or paste it here. Plain text or Markdown; separate paragraphs with a blank line.">
+        <textarea
+          id="text"
+          name="text"
+          rows={16}
+          defaultValue={v.text}
+          aria-describedby="text-hint"
+          className="mono-input"
+          onChange={() => setEditedAfter(state?.key ?? 0)}
+        />
+      </Field>
+      <Field id="sourceUrl" label="Where it was published" hint="Leave empty if it was never public, for example an email.">
+        <input id="sourceUrl" name="sourceUrl" type="url" defaultValue={v.sourceUrl} placeholder="https://" aria-describedby="sourceUrl-hint" />
+      </Field>
+
+      <Message state={state} />
+      {preview && (
+        <div className="record-preview">
+          <p className="label">
+            {preview.stats ? describeStats(preview.stats) : "First copy"} · {preview.chars.toLocaleString("en-US")} characters
+          </p>
+          {preview.entries.length > 0 && (
+            <>
+              <RedlineLegend />
+              <div className="sheet">
+                <Redline entries={preview.entries} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="form-actions">
+        <button type="submit" name="intent" value="preview" className="button" disabled={pending}>
+          3. Preview the changes
+        </button>
+        <button type="submit" name="intent" value="record" className="button button-primary" disabled={pending || !preview || stale}>
+          {pending ? "Working…" : "4. Record this version"}
+        </button>
+      </div>
+      {(!preview || stale) && (
+        <p className="hint">
+          {stale ? "You changed the text, so preview it again before recording." : "Preview first. Recording adds the version to the public record for good."}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/* ---------- From a submission ---------- */
+
+export function ChooseDocument({
+  submissionId,
+  options,
+}: {
+  submissionId: string;
+  options: { value: string; label: string }[];
+}) {
+  const router = useRouter();
+  const [choice, setChoice] = useState(options[0]?.value ?? "");
+  if (options.length === 0) return <p className="empty">Add the document under Platforms first.</p>;
+  return (
+    <form
+      className="form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (choice) router.push(`/admin/platforms/${choice}?from=${submissionId}`);
+      }}
+    >
+      <Field id="target" label="Which document is it a version of?" hint="If it isn’t listed, add it under Platforms first.">
+        <select id="target" value={choice} onChange={(e) => setChoice(e.target.value)} aria-describedby="target-hint">
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <button type="submit" className="button">
+        Continue
+      </button>
+    </form>
+  );
+}

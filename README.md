@@ -1,36 +1,172 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fine Print
 
-## Getting Started
+A public, dated record of the terms that healthcare software platforms (EHRs, billing and credentialing services, telehealth networks and directories) ask clinicians to accept, and every change to them, shown as a redline.
 
-First, run the development server:
+## How it fits together
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+/admin/platforms        What we track, stored in the database and edited by admins.
+src/core/platforms.ts   The starting list (loaded by `npm run db:setup`) and the
+                        rules every platform and document must meet.
+scripts/crawl.ts        Checks each automatic document, records new versions,
+                        and asks an AI model for a summary of each change.
+scripts/capture.ts      Imports a page saved in a browser, for sites we can't fetch.
+scripts/summarize.ts    Writes missing summaries, or redoes one.
+scripts/admin.ts        Creates and manages admin accounts.
+src/app/                The website (Next.js 16): the public record, the private
+                        submission form (/submit) and the admin pages (/admin).
+deploy/                 systemd timer that runs the crawler twice a day.
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+There are two processes with separate database users:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Process | Database user | Can write |
+| --- | --- | --- |
+| Website (`next start`) | `MONGODB_SITE_URI`, role `fineprintSite` | The platform list, new versions (insert only), check status, submissions, summaries, sessions, rate-limit counters. |
+| Crawler and scripts | `MONGODB_WRITE_URI`, role `readWrite` | Everything |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The website can add versions, so admins can record them, but its database role has no permission to update or delete one. Even a bug in the website, or a stolen admin password, cannot rewrite what a platform's terms said. A unique index also stops two versions from ever claiming the same predecessor, so the history can't fork.
 
-## Learn More
+## Local setup
 
-To learn more about Next.js, take a look at the following resources:
+Needs Node 24+ and MongoDB 7+.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+cp .env.example .env.local      # fill it in (see below)
+npm run db:setup                # create indexes and load the starting platform list
+npm run admin -- add you@example.com "Your Name"   # prints a password once
+npm run crawl -- --dry-run      # fetch and extract only; saves nothing
+npm run crawl                   # first real capture
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Create the database users once, in `mongosh` as a database admin. The site role can read everything but write only where listed:
 
-## Deploy on Vercel
+```js
+use fine_print
+db.createRole({
+  role: "fineprintSite",
+  privileges: [
+    { resource: { db: "fine_print", collection: "" }, actions: ["find"] },
+    { resource: { db: "fine_print", collection: "platforms" }, actions: ["insert", "update", "remove"] },
+    { resource: { db: "fine_print", collection: "versions" }, actions: ["insert"] },
+    { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update"] },
+    { resource: { db: "fine_print", collection: "checks" }, actions: ["insert"] },
+    { resource: { db: "fine_print", collection: "submissions" }, actions: ["insert", "update", "remove"] },
+    { resource: { db: "fine_print", collection: "submission_files" }, actions: ["insert", "remove"] },
+    { resource: { db: "fine_print", collection: "summaries" }, actions: ["insert", "update"] },
+    { resource: { db: "fine_print", collection: "sessions" }, actions: ["insert", "remove"] },
+    { resource: { db: "fine_print", collection: "rate_limits" }, actions: ["insert", "update"] },
+  ],
+  roles: [],
+})
+db.createUser({ user: "fineprint_site", pwd: passwordPrompt(), roles: ["fineprintSite"] })
+db.createUser({ user: "fineprint_crawler", pwd: passwordPrompt(), roles: [{ role: "readWrite", db: "fine_print" }] })
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+If you created the role before admins could add records, add the new permissions with:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```js
+db.grantPrivilegesToRole("fineprintSite", [
+  { resource: { db: "fine_print", collection: "platforms" }, actions: ["insert", "update", "remove"] },
+  { resource: { db: "fine_print", collection: "versions" }, actions: ["insert"] },
+  { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update"] },
+  { resource: { db: "fine_print", collection: "checks" }, actions: ["insert"] },
+])
+```
+
+(Use your own database name if it isn't `fine_print`. An older `fineprint_web` user with the `read` role can be dropped once the site uses `fineprint_site`.)
+
+Generate the encryption key for private submissions with `openssl rand -base64 32` and put it in `FINEPRINT_DATA_KEY`. **Back it up somewhere safe, apart from the database.** Without it, stored submissions cannot be read.
+
+## The crawler
+
+- Fetches only `https` URLs from the platform list. Redirects may only go to hosts listed for that document.
+- Connects only to public internet addresses. A document address that points at this machine or a private network is refused, whatever an admin enters.
+- Identifies itself as `FinePrintBot`, follows robots.txt and pauses 4 seconds between requests.
+- Never runs page JavaScript. HTML is parsed as text and only the element named by the document's `selectors` is kept.
+- Limits: 30 s timeout, 5 redirects, 5 MB per page.
+- **Confirms changes:** when the text differs from the last version, it waits 90 seconds and fetches again. It records a change only if both fetches agree.
+- **Rejects broken extractions:** if the text suddenly shrinks by more than half, it flags an extraction failure instead of recording a "change". This usually means the site's layout changed and a selector needs updating.
+- A lock in the database prevents overlapping runs.
+- **Help-centre articles:** documents hosted on a Zendesk help centre (Alma's and Rula's provider terms) are marked `source: "zendesk-api"`. The crawler reads them from the help centre's public article API (`/api/v2/help_center/<locale>/articles/<id>.json`), which returns the same text as the page. The page itself sits behind a browser-only Cloudflare check. robots.txt is checked for the API address as usual.
+
+- **Summaries:** after recording a change, it sends the changed paragraphs (never the whole document, never anything private) to OpenAI and stores a short plain-language summary. Default model `gpt-5.4-mini`, about a cent per change; set `OPENAI_MODEL` to change it. A failed summary never fails the crawl. Run `npm run summarize` to fill any gaps.
+
+Every check is logged to the `checks` collection, which keeps 180 days. Each document's latest result, including internal error details, is in `status`. The website shows only a plain-language summary.
+
+### Schedule
+
+Twice a day, at 09:00 and 21:00 UTC (around 5 a.m. and 5 p.m. US Eastern), with up to 30 minutes of random delay. See `deploy/`. With cron instead:
+
+```cron
+0 9,21 * * *  cd /srv/fine_print && /usr/bin/node --env-file=/etc/fineprint/crawler.env scripts/crawl.ts --jitter 30 >> /var/log/fineprint-crawl.log 2>&1
+```
+
+### Documents captured by hand
+
+Some sites block automated requests (Headway and TherapyNotes use Cloudflare challenges) or only show their terms after JavaScript runs (SimplePractice). For those, open the document's page under `/admin/platforms` and use **Record a new version**:
+
+1. Get the text: **Fetch from the public page**, upload a page saved from your browser ("Save page as…" → "Webpage, HTML only"), or paste it.
+2. Check the text, then **Preview the changes** to see the redline against the current version.
+3. **Record this version.** It is marked "Captured by hand" on the site, and the AI summary is written in the background.
+
+The same works from the command line: `npm run capture -- simplepractice/terms-of-service ~/Downloads/terms.html --dry-run`, then again without `--dry-run`.
+
+## Change summaries
+
+Each change gets an AI draft, shown publicly with the label "not yet checked by an editor". Admins review them at `/admin`: edit the headline and points, then **Publish as reviewed**, or **Hide summary**. A reviewed or hidden summary is never overwritten by the crawler. To ask for a fresh draft:
+
+```bash
+npm run summarize -- --id <version id> --force
+```
+
+## Private submissions
+
+Clinicians can send terms or policy updates they were shown privately at `/submit`, with their contact details so an editor can confirm the submission.
+
+- Everything except the platform name and status is encrypted with AES-256-GCM before it reaches the database, using `FINEPRINT_DATA_KEY`, which only the website holds.
+- Files: up to 3, 8 MB in total. PDF, PNG, JPEG and WebP are recognised by their contents, not their names; `.txt` and `.eml` must be valid text. Admins can only download them, never view them on the site.
+- Spam: a hidden trap field, plus limits of 5 submissions an hour and 20 a day per IP address, and 500 a day overall.
+- Submissions are never sent to an AI service.
+- Admins review them at `/admin`. They can set a status, keep private notes, and delete a submission for good. Once confirmed, **Add to the record** opens the matching document's recording form with the submitted text filled in. The version is marked "Shared by a clinician", with no public address, and the submission is marked "Added to the record".
+
+## Admins
+
+There is no sign-up page. Accounts exist only if someone with database access creates them:
+
+```bash
+npm run admin -- add editor@example.com "Editor Name"   # prints a random password once
+npm run admin -- reset editor@example.com               # new password, signs out everywhere
+npm run admin -- disable editor@example.com             # blocks sign-in, signs out everywhere
+npm run admin -- list
+```
+
+Sign in at `/admin/login`. Sessions last 12 hours, in an HttpOnly, Secure, SameSite=Strict cookie. Only a hash of the session token is stored. Sign-in is limited to 5 attempts per account and 20 per IP address every 15 minutes.
+
+## Adding a platform
+
+At `/admin/platforms`: **Add a platform**, then **Add a document** for each agreement to track. For automatic checks, give the document's public address and, under "Where the text is on the page", a CSS selector that holds only the terms text (`main` or `article` fit most sites). Then use **Fetch from the public page** on the document's page to check the selector picks up the right text, and record the first version. The crawler picks up new documents on its next run.
+
+Short names (the `simplepractice` in `/simplepractice/terms-of-service`) can't be changed once created. A platform or document can only be deleted while nothing has been recorded for it.
+
+## Deploying
+
+- Run `next build`, then `next start` behind a reverse proxy (Caddy or nginx) that terminates TLS and rate-limits requests.
+- The site caches database reads in memory for up to 10 minutes (the `record` profile in `next.config.ts`), so a busy link barely touches MongoDB.
+- Give the web process `MONGODB_SITE_URI` and `FINEPRINT_DATA_KEY`. Give the crawler service `MONGODB_WRITE_URI` and `OPENAI_API_KEY` (in `/etc/fineprint/crawler.env`). Neither needs the other's secrets.
+- The reverse proxy must **overwrite** the client address headers, so visitors can't fake their IP address to get around rate limits. With nginx: `proxy_set_header X-Real-IP $remote_addr;` and `proxy_set_header X-Forwarded-For $remote_addr;`. Caddy sets these correctly by default.
+- Submissions can be up to 9 MB, so allow that body size in the proxy (`client_max_body_size 10m;` in nginx).
+- If you ever run more than one instance of the website, set the same `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` on all of them.
+- Bind MongoDB to localhost or a private network. Never expose it publicly.
+
+## Tests
+
+```bash
+npm test          # diff, text normalisation and summary input
+npm run lint
+npm run typecheck # run `npx next typegen` first on a fresh clone
+```
+
+Fine Print is not legal advice and is not affiliated with any platform it tracks.
