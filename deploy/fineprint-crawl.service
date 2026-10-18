@@ -8,7 +8,8 @@
 # Check:  systemctl list-timers fineprint-crawl.timer
 # Logs:   journalctl -u fineprint-crawl.service
 #
-# Adjust User, WorkingDirectory, EnvironmentFile and the node path to your server.
+# Runs the release that ~/fine_print/current points to (see deploy/remote-deploy.sh),
+# with Node 24 (Fedora's nodejs24 package: /usr/bin/node-24).
 
 [Unit]
 Description=Fine Print: check tracked terms for changes
@@ -17,13 +18,13 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=fineprint
-Group=fineprint
-WorkingDirectory=/srv/fine_print
+User=deployment
+Group=deployment
+WorkingDirectory=/home/deployment/fine_print/current
 # Holds MONGODB_WRITE_URI, OPENAI_API_KEY (for summaries), FINEPRINT_SITE_URL and FINEPRINT_CONTACT_EMAIL
 # (both go into the crawler's User-Agent). Only this service should be able to read it.
 EnvironmentFile=/etc/fineprint/crawler.env
-ExecStart=/usr/bin/node scripts/crawl.ts
+ExecStart=/usr/bin/node-24 scripts/crawl.ts
 TimeoutStartSec=45min
 
 # Sandboxing: the crawler only needs outbound network access and nothing else.
@@ -31,7 +32,9 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
-ProtectHome=yes
+# Home directories are hidden, except this app's own folder, read-only.
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/deployment/fine_print
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

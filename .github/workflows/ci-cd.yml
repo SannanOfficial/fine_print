@@ -1,0 +1,127 @@
+# Checks every push and pull request; deploys main to fineprint.syedsannan.com.
+#
+# Deploying uploads the code to a new release folder on the server
+# (~/fine_print/releases/<id> for the deployment user) and runs
+# deploy/remote-deploy.sh there: it installs, builds, switches the site over,
+# checks it answers, and rolls back if it doesn't. See README, "Deploying".
+#
+# Secrets (in the "production" environment): VPS_HOST, VPS_USER,
+# VPS_SSH_KEY (private key for the deployment user) and VPS_KNOWN_HOSTS
+# (the server's host keys, so the connection can't be intercepted).
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Generate route types
+        run: npx next typegen
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    name: Deploy
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://fineprint.syedsannan.com
+    # One deploy at a time; a newer push waits rather than cancelling one halfway.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host server
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          CONFIG
+
+      - name: Upload the release
+        run: |
+          RELEASE_ID="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
+          ssh server "mkdir -p fine_print/releases/$RELEASE_ID"
+          rsync -az --delete \
+            --exclude .git --exclude node_modules --exclude .next --exclude '.env*' \
+            ./ "server:fine_print/releases/$RELEASE_ID/"
+
+      - name: Build and go live
+        run: ssh server "bash fine_print/releases/$RELEASE_ID/deploy/remote-deploy.sh $RELEASE_ID"
+
+      - name: Check the public site
+        run: |
+          if curl -fsS -o /dev/null --retry 5 --retry-delay 5 --retry-all-errors https://fineprint.syedsannan.com/; then
+            echo "https://fineprint.syedsannan.com answers."
+          else
+            echo "::warning::The release is live on the server, but https://fineprint.syedsannan.com didn't answer. Check DNS, Cloudflare and nginx."
+          fi
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

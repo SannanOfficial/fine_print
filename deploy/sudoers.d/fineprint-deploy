@@ -1,0 +1,5 @@
+# Lets the deployment user restart the Fine Print website after a deploy
+# (deploy/remote-deploy.sh), and nothing else as root.
+#
+# Install:  sudo install -m 440 deploy/sudoers.d/fineprint-deploy /etc/sudoers.d/ && sudo visudo -c
+deployment ALL=(root) NOPASSWD: /usr/bin/systemctl restart fineprint-web.service

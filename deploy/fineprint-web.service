@@ -7,8 +7,9 @@
 #
 # Logs:   journalctl -u fineprint-web.service
 #
-# Build first (npm ci && npm run build) as the fineprint user. Adjust User,
-# WorkingDirectory, EnvironmentFile and the node path to your server.
+# Runs the release that ~/fine_print/current points to, built by
+# deploy/remote-deploy.sh, with Node 24 (Fedora's nodejs24: /usr/bin/node-24).
+# nginx proxies fineprint.syedsannan.com to port 3005 (deploy/nginx/).
 
 [Unit]
 Description=Fine Print: website
@@ -17,16 +18,19 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=fineprint
-Group=fineprint
-WorkingDirectory=/srv/fine_print
+User=deployment
+Group=deployment
+WorkingDirectory=/home/deployment/fine_print/current
 # Holds MONGODB_SITE_URI, FINEPRINT_DATA_KEY, FINEPRINT_SITE_URL, MAIL_FROM, SMTP_URL, OPENAI_API_KEY and
 # FINEPRINT_CONTACT_EMAIL. Only this service should be able to read it.
 EnvironmentFile=/etc/fineprint/web.env
-Environment=NODE_ENV=production
-# Listens on localhost only: visitors reach it through the proxy, which is the
-# only thing allowed to say what their IP address is (see README, "Deploying").
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Environment=NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+# Listens on the loopback address only (localhost; ::1 on this server): visitors
+# reach it through nginx, the only thing allowed to say what their IP address is
+# (see README, "Deploying"). "localhost" rather than 127.0.0.1: given an IP
+# address, Next.js treats its own internal rewrites (the 404 page) as requests
+# to another site and fails them.
+ExecStart=/usr/bin/node-24 node_modules/next/dist/bin/next start -H localhost -p 3005
 Restart=on-failure
 RestartSec=5
 
@@ -35,8 +39,9 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
-ReadWritePaths=-/srv/fine_print/.next/cache
-ProtectHome=yes
+# Home directories are hidden, except this app's own folder (Next.js writes its cache there).
+ProtectHome=tmpfs
+BindPaths=/home/deployment/fine_print
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
