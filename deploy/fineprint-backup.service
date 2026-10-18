@@ -1,0 +1,41 @@
+# Backs up Fine Print's database every night. Started by fineprint-backup.timer.
+#
+# Install:
+#   sudo cp deploy/fineprint-backup.service deploy/fineprint-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fineprint-backup.timer
+#
+# Backups:  /var/lib/fineprint-backups, one compressed archive a night, kept 14 days.
+# Restore:  mongorestore --config=/etc/fineprint/mongodump.yaml --gzip --archive=<file> --drop
+# Logs:     journalctl -u fineprint-backup.service
+#
+# /etc/fineprint/mongodump.yaml holds the connection (`uri: mongodb://…`), so
+# the password never appears in a command line. Copy backups off the server
+# too, and keep FINEPRINT_DATA_KEY with them: without it, the submissions and
+# subscriber addresses in a backup can't be read.
+
+[Unit]
+Description=Fine Print: back up the database
+After=mongod.service
+
+[Service]
+Type=oneshot
+StateDirectory=fineprint-backups
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/mongodump --config=/etc/fineprint/mongodump.yaml --db=fine_print --gzip --quiet --archive=/var/lib/fineprint-backups/fine_print-latest.archive.gz
+ExecStartPost=/bin/sh -c 'cd /var/lib/fineprint-backups && mv fine_print-latest.archive.gz "fine_print-$(date -u +%%Y-%%m-%%d).archive.gz" && find . -name "fine_print-*.archive.gz" -mtime +14 -delete'
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

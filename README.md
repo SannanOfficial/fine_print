@@ -109,7 +109,7 @@ Every check is logged to the `checks` collection, which keeps 180 days. Each doc
 Twice a day, at 09:00 and 21:00 UTC (around 5 a.m. and 5 p.m. US Eastern), with up to 30 minutes of random delay. See `deploy/`. With cron instead:
 
 ```cron
-0 9,21 * * *  cd /srv/fine_print && /usr/bin/node --env-file=/etc/fineprint/crawler.env scripts/crawl.ts --jitter 30 >> /var/log/fineprint-crawl.log 2>&1
+0 9,21 * * *  cd /home/deployment/fine_print/current && /usr/bin/node-24 --env-file=/etc/fineprint/crawler.env scripts/crawl.ts --jitter 30 >> /var/log/fineprint-crawl.log 2>&1
 ```
 
 ### Documents captured by hand
@@ -175,13 +175,60 @@ Short names (the `simplepractice` in `/simplepractice/terms-of-service`) can't b
 
 ## Deploying
 
-- Run `npm run build`, then the website with `deploy/fineprint-web.service` (or `npm start`), behind a reverse proxy (Caddy or nginx) on the same server that terminates TLS and rate-limits requests. Both listen on `127.0.0.1:3000` only, so nobody can reach the site without going through the proxy.
-- The site caches database reads in memory for up to 10 minutes (the `record` profile in `next.config.ts`), so a busy link barely touches MongoDB.
-- Give the web process `MONGODB_SITE_URI`, `FINEPRINT_DATA_KEY`, `FINEPRINT_SITE_URL` (links in emails; with `SMTP_URL` set, no email is sent without it), `MAIL_FROM`, `SMTP_URL`, and `OPENAI_API_KEY` if versions recorded at `/admin` should get AI summaries. Give the crawler service `MONGODB_WRITE_URI` and `OPENAI_API_KEY` (in `/etc/fineprint/crawler.env`). Give the newsletter service `MONGODB_WRITE_URI`, `FINEPRINT_DATA_KEY`, `MAIL_FROM`, `SMTP_URL` and `FINEPRINT_SITE_URL` (in `/etc/fineprint/newsletter.env`).
-- Set `FINEPRINT_CONTACT_EMAIL` to an address a person reads. It appears in the footer, on submission receipts and in the crawler's User-Agent, and is the reply address of every email the site sends.
+Production runs on the VPS at `148.230.84.61` (Fedora 42) as the `deployment` user, behind nginx and Cloudflare, at https://fineprint.syedsannan.com.
+
+**Every push to `main` deploys itself** (`.github/workflows/ci-cd.yml`):
+
+1. **Check:** install, audit production dependencies, type-check, lint, unit tests and a full build. Pull requests run this too.
+2. **Upload:** the code goes to a new release folder, `~/fine_print/releases/<time>-<commit>`, over SSH with a key that can only be used for this (it's in the `production` environment's secrets, which only `main` can use, with the server's host keys pinned).
+3. **Go live:** `deploy/remote-deploy.sh` runs on the server. It installs and builds inside the new folder while the live site keeps running, points `~/fine_print/current` at it, restarts the site and checks that the home page answers 200 and an unknown page 404. If not, it switches back to the previous release. The newest five releases are kept.
+
+**On the server:**
+
+```
+~/fine_print/current            The live release (a link into releases/).
+~/fine_print/releases/          Recent releases.
+/etc/fineprint/*.env            Settings and secrets, root only: web, crawler, newsletter; build.env (public values the build needs).
+/etc/fineprint/mongodump.yaml   The backup's database connection.
+/etc/systemd/system/fineprint-* The website (port 3005), crawl twice a day, weekly email, nightly backup (from deploy/).
+/etc/nginx/sites-enabled/fineprint.syedsannan.com   From deploy/nginx/, with HTTPS added by certbot.
+/etc/sudoers.d/fineprint-deploy Lets `deployment` restart the website, and nothing else.
+/var/lib/fineprint-backups/     A compressed database dump each night, kept 14 days.
+```
+
+- **Node 24** comes from Fedora's `nodejs24` package (`/usr/bin/node-24`); the system's `node` stays at 22 for the other apps.
+- **MongoDB 7.0**, listening on localhost with logins required. MongoDB 8.x refuses to start on this server's Linux 6.19 kernel (SERVER-121912, fixed in kernel 7.0.14).
+- **The site listens on `localhost`** (`::1` here). Not `127.0.0.1`: given an IP address, Next.js treats its own internal rewrites (the 404 page) as requests to another site and fails them.
+
+Everyday commands, as root:
+
+```bash
+systemctl status fineprint-web                 # the website; journalctl -u fineprint-web for its log
+systemctl start fineprint-crawl                # check every document now; journalctl -u fineprint-crawl
+systemctl list-timers 'fineprint-*'            # when the crawl, email and backup run next
+cd /home/deployment/fine_print/current && set -a && . /etc/fineprint/crawler.env && set +a && sudo -u deployment -E node-24 scripts/status.ts
+# Roll back by hand: point current at an older release and restart.
+sudo -u deployment ln -sfn /home/deployment/fine_print/releases/<id> /home/deployment/fine_print/current && systemctl restart fineprint-web
+```
+
+To add an admin, run on the server (the password is printed once, to you):
+
+```bash
+cd /home/deployment/fine_print/current && set -a && . /etc/fineprint/crawler.env && set +a && sudo -u deployment -E node-24 scripts/admin.ts add you@example.com "Your Name"
+```
+
+To turn on **email** (confirmations, receipts and the Monday email), set `SMTP_URL` in `/etc/fineprint/web.env` and `newsletter.env`, then `systemctl restart fineprint-web` and `systemctl enable --now fineprint-newsletter.timer`. For **AI summaries**, set `OPENAI_API_KEY` in `web.env` and `crawler.env`. Settings changed in `build.env` take effect on the next deploy.
+
+**Back up `FINEPRINT_DATA_KEY`** (in `/etc/fineprint/web.env`) somewhere safe, apart from the server. Without it, stored submissions and subscriber addresses can't be read, from the database or from a backup. Copy the nightly backups off the server too.
+
+General notes, for this or any other server:
+
+- The site caches database reads in memory for up to 10 minutes (the `record` profile in `next.config.ts`), so a busy link barely touches MongoDB. Changes made outside the admin pages (scripts, the crawler) show up within that time.
+- Give the web process `MONGODB_SITE_URI`, `FINEPRINT_DATA_KEY`, `FINEPRINT_SITE_URL` (links in emails; with `SMTP_URL` set, no email is sent without it), `MAIL_FROM`, `SMTP_URL`, and `OPENAI_API_KEY` if versions recorded at `/admin` should get AI summaries. Give the crawler `MONGODB_WRITE_URI` and `OPENAI_API_KEY`, and the newsletter `MONGODB_WRITE_URI`, `FINEPRINT_DATA_KEY`, `MAIL_FROM`, `SMTP_URL` and `FINEPRINT_SITE_URL`.
+- `FINEPRINT_CONTACT_EMAIL` should be an address a person reads. It appears in the footer, on submission receipts and in the crawler's User-Agent, and is the reply address of every email the site sends.
 - Set up SPF, DKIM and DMARC for the sending domain with your email provider, or the weekly emails will land in spam.
-- The systemd units forbid writing anywhere (`ProtectSystem=strict`). If you ever point the newsletter service at `MAIL_OUTBOX_DIR`, add `ReadWritePaths=` for that folder.
-- Rate limits use the visitor's IP address as the proxy reports it: the **last** `X-Forwarded-For` entry, the one the proxy itself adds. Caddy's `reverse_proxy` does this by default; with nginx use `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (or `$remote_addr`). Other headers such as `X-Real-IP` are ignored, since a proxy may pass a visitor's made-up value straight through. Behind a CDN such as Cloudflare, set `FINEPRINT_CLIENT_IP_HEADER=cf-connecting-ip` and let only the CDN's addresses reach your proxy. IPv6 visitors are limited per /64 block.
+- The systemd units forbid writing anywhere but the app's own folder (`ProtectSystem=strict`, home directories hidden). If you ever point the newsletter service at `MAIL_OUTBOX_DIR`, add `ReadWritePaths=` for that folder.
+- Rate limits use the visitor's IP address as the proxy reports it: the **last** `X-Forwarded-For` entry. The nginx site here takes the address from Cloudflare's `CF-Connecting-IP` header, but only for requests from Cloudflare's own addresses, and sends it as the only `X-Forwarded-For` entry. Elsewhere: Caddy's `reverse_proxy` does the right thing by default; with nginx alone use `proxy_set_header X-Forwarded-For $remote_addr;`. Headers such as `X-Real-IP` are ignored by the site. `FINEPRINT_CLIENT_IP_HEADER` can name another header if a CDN sets one. IPv6 visitors are limited per /64 block.
 - Submissions can be up to 9 MB, so allow that body size in the proxy (`client_max_body_size 10m;` in nginx).
 - If you ever run more than one instance of the website, set the same `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` on all of them.
 - Bind MongoDB to localhost or a private network. Never expose it publicly.

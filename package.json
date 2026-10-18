@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -H 127.0.0.1",
+    "start": "next start -H localhost",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "crawl": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/crawl.ts",
