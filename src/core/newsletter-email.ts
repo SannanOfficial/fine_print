@@ -191,6 +191,12 @@ export function digestEmail(input: {
         `<p style="margin:0 0 8px;"><a href="${escape(href(g, c))}" style="color:${LINK};">See exactly what changed in the ${escape(c.documentTitle)}</a></p>`,
       );
     }
+    // The whole picture: every change this company has made, as a timeline and a PDF.
+    const record = `${siteUrl}/${g.platformSlug}`;
+    textParts.push("", `${g.platformName}'s full record (timeline and PDF): ${record}`);
+    htmlParts.push(
+      `<p style="margin:16px 0 0;font-size:15px;"><a href="${escape(record)}" style="color:${LINK};">${escape(g.platformName)}&rsquo;s full record: every change, as a timeline and a PDF</a></p>`,
+    );
   }
 
   const why = "You're getting this because you subscribed to weekly emails about these platforms on Fine Print. Weeks with no changes send nothing. Fine Print is not legal advice.";

@@ -4,13 +4,15 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ExternalLink } from "@/components/ExternalLink.tsx";
-import { Docket, StatusLine } from "@/components/Record.tsx";
+import { StatusLine } from "@/components/Record.tsx";
 import { SubscribeForm } from "@/components/SubscribeForm.tsx";
+import { RecordTimeline, StandingPanel } from "@/components/Timeline.tsx";
 import { audienceLabel, documentKey } from "@/core/platforms.ts";
 import { getDocumentFacts, getHistory, getStatuses } from "@/lib/data.ts";
 import { pageMetadata } from "@/lib/meta.ts";
 import { getPlatform, getPlatforms } from "@/lib/registry.ts";
 import { breadcrumbs, JsonLd, platformEntity, webPage } from "@/lib/structured-data.tsx";
+import { buildTimeline, standingOf } from "@/lib/timeline.ts";
 
 export async function generateMetadata({ params }: PageProps<"/[platform]">): Promise<Metadata> {
   const platform = await getPlatform((await params).platform);
@@ -44,6 +46,8 @@ async function PlatformView({ slug }: { slug: string }) {
   const [platforms, statuses, history, facts] = await Promise.all([getPlatforms(), getStatuses(), getHistory(slug), getDocumentFacts()]);
   const platform = platforms.find((p) => p.slug === slug);
   if (!platform) notFound();
+  const timeline = buildTimeline(platform, history);
+  const standing = standingOf(platform, timeline);
 
   const path = `/${platform.slug}`;
   const lastChange = platform.documents
@@ -73,8 +77,8 @@ async function PlatformView({ slug }: { slug: string }) {
       <p className="eyebrow">{platform.kind}</p>
       <h1>{platform.name}</h1>
       <p className="lede" style={{ marginTop: "0.75rem" }}>
-        Every version of the terms {platform.name} asks clinicians to accept, word for word, with each change dated and
-        shown as a redline.
+        Every change {platform.name} has made to the terms it asks clinicians to accept, across all its documents, with
+        the date and a plain-language summary of each. Read it to judge how the company treats the people who rely on it.
       </p>
       <p className="note" style={{ marginTop: "1rem" }}>
         Official site:{" "}
@@ -83,7 +87,27 @@ async function PlatformView({ slug }: { slug: string }) {
         </ExternalLink>
       </p>
 
-      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={`/${platform.slug}`} />
+      <StandingPanel standing={standing} name={platform.name} pdfHref={`/${platform.slug}/timeline.pdf`} />
+
+      <section className="section" aria-labelledby="timeline-title">
+        <div className="section-head">
+          <h2 id="timeline-title">Timeline of changes</h2>
+        </div>
+        {timeline.length === 0 ? (
+          <p className="empty">
+            Nothing recorded for {platform.name} yet. If {platform.name} showed you new terms,{" "}
+            <Link href="/submit">share them privately</Link>.
+          </p>
+        ) : (
+          <>
+            <p className="note timeline-note">
+              Newest first. Each date is when the change happened as far as we know: the date on the document when it has
+              one, otherwise the day we recorded it. Summaries may leave things out; the redline is the exact record.
+            </p>
+            <RecordTimeline items={timeline} />
+          </>
+        )}
+      </section>
 
       <section className="section" aria-labelledby="docs-title">
         <div className="section-head">
@@ -116,16 +140,7 @@ async function PlatformView({ slug }: { slug: string }) {
         )}
       </section>
 
-      <section className="section" aria-labelledby="history-title">
-        <div className="section-head">
-          <h2 id="history-title">History</h2>
-        </div>
-        {history.length === 0 ? (
-          <p className="empty">Nothing recorded for this platform yet.</p>
-        ) : (
-          <Docket versions={history} showDocument platforms={platforms} />
-        )}
-      </section>
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={`/${platform.slug}`} />
     </>
   );
 }

@@ -2,6 +2,8 @@
 
 A public, dated record of the terms that healthcare software platforms (EHRs, billing and credentialing services, telehealth networks and directories) ask clinicians to accept, and every change to them, shown as a redline.
 
+Each company's page (`/headway`) is its record at a glance, for judging how it treats the clinicians who rely on it: plain counts (changes recorded, in the last 12 months, shared privately by clinicians, tracked since), then one timeline of every change to every document it publishes, each with its date and summary. **Download the record (PDF)** (`/headway/timeline.pdf`) gives the same content as a PDF to save, print or share; each change in it links to its redline. Fine Print reports what changed; it doesn't score companies.
+
 ## How it fits together
 
 ```

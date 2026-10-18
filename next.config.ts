@@ -42,6 +42,8 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // The PDF library loads its own font data at run time; leave it to Node.
+  serverExternalPackages: ["pdfkit"],
   // Every visitor gets the page's title, description and link-preview tags in
   // <head>, and the complete page in the first response, instead of having them
   // streamed in afterwards. Search engines, link previews, SEO tools and

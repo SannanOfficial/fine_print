@@ -31,6 +31,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(lower, 308);
   }
 
+  // A company's record as a PDF (src/app/[platform]/timeline.pdf).
+  const pdf = /^\/([a-z0-9-]+)\/timeline\.pdf$/.exec(path);
+  if (pdf) {
+    if ((await isKnownPath(pdf[1])) !== false) return NextResponse.next();
+    return NextResponse.rewrite(new URL("/_not-found", request.url), { status: 404 });
+  }
+
   let segments: string[];
   try {
     segments = request.nextUrl.pathname.split("/").filter(Boolean).map(decodeURIComponent);

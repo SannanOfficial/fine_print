@@ -260,6 +260,9 @@ function PlatformIndex({
               {p.name}
             </Link>
             <span className="index-kind">{p.kind}</span>
+            <Link href={`/${p.slug}#standing-title`} className="index-record">
+              Timeline and PDF
+            </Link>
           </p>
           <ul className="index-docs">
             {p.documents.map((d) => {

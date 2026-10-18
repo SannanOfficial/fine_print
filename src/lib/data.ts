@@ -51,13 +51,13 @@ export interface VersionSummary {
   stats: ChangeStats | null;
   isFirst: boolean;
   summary: ChangeSummary | null;
+  /** The date on the document itself (YYYY-MM-DD), when an editor recorded one. */
+  datedOn: string | null;
 }
 
 export interface VersionText extends VersionSummary {
   content: string;
   sourceUrl: string | null;
-  /** The date on the document itself (YYYY-MM-DD), when an editor recorded one. */
-  datedOn: string | null;
 }
 
 const SUMMARY_FIELDS = {
@@ -68,6 +68,7 @@ const SUMMARY_FIELDS = {
   method: 1,
   stats: 1,
   previousId: 1,
+  datedOn: 1,
 } as const;
 
 type SummaryRecord = Pick<VersionRecord, "_id" | keyof typeof SUMMARY_FIELDS>;
@@ -83,6 +84,7 @@ function toSummary(v: SummaryRecord): VersionSummary {
     stats: v.stats,
     isFirst: v.previousId === null,
     summary: null,
+    datedOn: v.datedOn ?? null,
   };
 }
 
@@ -102,7 +104,7 @@ async function withSummaries<T extends VersionSummary>(list: T[]): Promise<T[]> 
 }
 
 function toText(v: VersionRecord): VersionText {
-  return { ...toSummary(v), content: v.content, sourceUrl: v.sourceUrl, datedOn: v.datedOn ?? null };
+  return { ...toSummary(v), content: v.content, sourceUrl: v.sourceUrl };
 }
 
 async function versions() {
@@ -133,7 +135,11 @@ export async function getStatuses(): Promise<Record<string, PublicStatus>> {
   );
 }
 
-/** Version history (without text), newest first. Optionally for one platform or document. */
+/**
+ * Version history (without text), newest first. Optionally for one platform
+ * or document. A platform's history is complete, for its timeline; the
+ * site-wide list is capped.
+ */
 export async function getHistory(platform?: string, document?: string): Promise<VersionSummary[]> {
   "use cache";
   cacheLife("record");
@@ -144,7 +150,7 @@ export async function getHistory(platform?: string, document?: string): Promise<
   if (document) filter.document = document;
 
   const rows = await (await versions())
-    .find(filter, { projection: SUMMARY_FIELDS, sort: { capturedAt: -1, _id: -1 }, limit: 500 })
+    .find(filter, { projection: SUMMARY_FIELDS, sort: { capturedAt: -1, _id: -1 }, limit: platform ? 0 : 500 })
     .toArray();
   return withSummaries(rows.map(toSummary));
 }
