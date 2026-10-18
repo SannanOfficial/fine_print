@@ -210,3 +210,7 @@ npm run typecheck # run `npx next typegen` first on a fresh clone
 ```
 
 Fine Print is not legal advice and is not affiliated with any platform it tracks.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The recorded terms belong to the platforms that publish them; Fine Print keeps copies as a public record. The Source Serif 4 typeface is used under the SIL Open Font License.

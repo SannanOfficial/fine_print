@@ -2,6 +2,8 @@
   "name": "fine_print",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Syed Muhammad Sannan (https://syedsannan.com)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
