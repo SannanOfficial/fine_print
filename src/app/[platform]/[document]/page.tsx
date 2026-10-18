@@ -5,8 +5,9 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { DocumentText } from "@/components/DocumentText.tsx";
 import { Docket } from "@/components/Record.tsx";
+import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { audienceLabel, documentKey, findDocument } from "@/core/platforms.ts";
-import { getHistory, getLatestText, getStatuses } from "@/lib/data.ts";
+import { getDocumentFacts, getHistory, getLatestText, getStatuses } from "@/lib/data.ts";
 import { describeOutcome, formatDay, formatDayTime } from "@/lib/format.ts";
 import { getDocument, getPlatforms } from "@/lib/registry.ts";
 
@@ -32,11 +33,12 @@ export default function DocumentPage({ params }: PageProps<"/[platform]/[documen
 
 async function DocumentView({ platformSlug, documentSlug }: { platformSlug: string; documentSlug: string }) {
   await connection();
-  const [platforms, statuses, history, latest] = await Promise.all([
+  const [platforms, statuses, history, latest, facts] = await Promise.all([
     getPlatforms(),
     getStatuses(),
     getHistory(platformSlug, documentSlug),
     getLatestText(platformSlug, documentSlug),
+    getDocumentFacts(),
   ]);
   const found = findDocument(platforms, platformSlug, documentSlug);
   if (!found) notFound();
@@ -72,15 +74,27 @@ async function DocumentView({ platformSlug, documentSlug }: { platformSlug: stri
           {status ? (
             <>
               {formatDayTime(status.lastCheckedAt)}
-              {outcome && !outcome.ok && <span className="status-warn"> · {outcome.text}</span>}
+              {outcome && !outcome.ok && (
+                <>
+                  <span className="status-warn"> · {outcome.text}</span>
+                  {status.lastSuccessAt && (
+                    <span className="index-kind">
+                      {" "}
+                      · Last successful check {formatDayTime(status.lastSuccessAt)}; the text below may be out of date.
+                    </span>
+                  )}
+                </>
+              )}
             </>
           ) : (
             "Not yet"
           )}
         </dd>
         <dt>Versions on record</dt>
-        <dd>{history.length}</dd>
+        <dd>{facts[documentKey(platformSlug, documentSlug)]?.count ?? 0}</dd>
       </dl>
+
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} />
 
       <section className="section" aria-labelledby="history-title">
         <div className="section-head">
@@ -98,7 +112,12 @@ async function DocumentView({ platformSlug, documentSlug }: { platformSlug: stri
           <div className="section-head">
             <h2 id="text-title">Current text</h2>
             <span className="mono">
-              Captured {formatDay(latest.capturedAt)} · still published {formatDay(latest.lastSeenAt)}
+              Captured {formatDay(latest.capturedAt)}
+              {latest.method === "auto"
+                ? ` · still published ${formatDay(latest.lastSeenAt)}`
+                : latest.method === "submission"
+                  ? " · shared by a clinician"
+                  : " · captured by hand"}
             </span>
           </div>
           <div className="sheet">

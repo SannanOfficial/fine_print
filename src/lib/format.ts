@@ -20,11 +20,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** "2 paragraphs edited, 1 added" */
 export function describeStats(stats: ChangeStats | null): string {
-  if (!stats) return "First copy captured";
+  if (!stats) return "First copy on record";
   const parts = [
     stats.changed && `${plural(stats.changed, "paragraph", "paragraphs")} edited`,
-    stats.added && `${stats.added} added`,
-    stats.removed && `${stats.removed} removed`,
+    stats.added && `${stats.changed ? stats.added : plural(stats.added, "paragraph", "paragraphs")} added`,
+    stats.removed && `${stats.changed || stats.added ? stats.removed : plural(stats.removed, "paragraph", "paragraphs")} removed`,
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : "Formatting or links changed";
 }

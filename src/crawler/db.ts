@@ -9,6 +9,7 @@ import {
   type PlatformRecord,
   type SessionRecord,
   type StatusRecord,
+  type SubscriberRecord,
   type VersionRecord,
 } from "../core/records.ts";
 
@@ -35,6 +36,7 @@ export function collections(db: Db) {
     summaries: db.collection<ChangeSummaryRecord>(COLLECTIONS.summaries),
     admins: db.collection<AdminRecord>(COLLECTIONS.admins),
     sessions: db.collection<SessionRecord>(COLLECTIONS.sessions),
+    subscribers: db.collection<SubscriberRecord>(COLLECTIONS.subscribers),
   };
 }
 
@@ -46,12 +48,12 @@ export async function loadPlatforms(c: Collections): Promise<Platform[]> {
   return rows.map((r) => ({ slug: r._id, name: r.name, kind: r.kind, website: r.website, documents: r.documents ?? [] }));
 }
 
-/** Take the crawler lock, or return false if another run holds it. */
-export async function acquireLock(c: Collections, holder: string, ttlMs: number): Promise<boolean> {
+/** Take a lock ("crawler" unless named), or return false if another run holds it. */
+export async function acquireLock(c: Collections, holder: string, ttlMs: number, name = "crawler"): Promise<boolean> {
   const now = new Date();
   try {
     await c.locks.updateOne(
-      { _id: "crawler", lockedUntil: { $lt: now } },
+      { _id: name, lockedUntil: { $lt: now } },
       { $set: { holder, lockedUntil: new Date(now.getTime() + ttlMs) } },
       { upsert: true },
     );
@@ -62,6 +64,6 @@ export async function acquireLock(c: Collections, holder: string, ttlMs: number)
   }
 }
 
-export async function releaseLock(c: Collections, holder: string): Promise<void> {
-  await c.locks.deleteOne({ _id: "crawler", holder });
+export async function releaseLock(c: Collections, holder: string, name = "crawler"): Promise<void> {
+  await c.locks.deleteOne({ _id: name, holder });
 }

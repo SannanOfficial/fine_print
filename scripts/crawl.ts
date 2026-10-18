@@ -11,11 +11,12 @@
  */
 import { parseArgs } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fetchDocument, label, looksTruncated, sameText } from "../src/crawler/check.ts";
+import { MongoNetworkError, MongoServerSelectionError } from "mongodb";
+import { fetchDocument, label, looksTruncated, redirectedHome, sameText, sameWording } from "../src/crawler/check.ts";
 import { acquireLock, collections, connectWriter, loadPlatforms, releaseLock } from "../src/crawler/db.ts";
-import { latestVersion, recordCheck, saveVersion } from "../src/crawler/record.ts";
+import { ConcurrentVersionError, latestVersion, recordCheck, saveVersion } from "../src/crawler/record.ts";
 import { RobotsCache } from "../src/crawler/robots.ts";
-import { trySummarize } from "../src/crawler/summary.ts";
+import { summarizeVersion, trySummarize } from "../src/crawler/summary.ts";
 
 const { values: args } = parseArgs({
   options: {
@@ -77,13 +78,16 @@ if (!(await acquireLock(c, holder, 60 * 60_000))) {
 }
 
 let unexpected = false;
+const tally = new Map<string, string[]>();
+const databaseDown = (error: unknown) => error instanceof MongoNetworkError || error instanceof MongoServerSelectionError;
 try {
   for (const { platform, doc } of targets) {
     const name = label(platform, doc);
     const started = Date.now();
     const at = new Date();
-    const done = async (outcome: Parameters<typeof recordCheck>[1]["outcome"], detail: string | null) => {
-      await recordCheck(c, { platform: platform.slug, document: doc.slug, outcome, detail, at, durationMs: Date.now() - started });
+    const done = async (outcome: Parameters<typeof recordCheck>[1]["outcome"], detail: string | null, when = at) => {
+      tally.set(outcome, [...(tally.get(outcome) ?? []), name]);
+      await recordCheck(c, { platform: platform.slug, document: doc.slug, outcome, detail, at: when, durationMs: Date.now() - started });
       console.log(`${name}: ${outcome}${detail ? ` (${detail})` : ""}`);
     };
 
@@ -94,6 +98,11 @@ try {
         continue;
       }
 
+      if (redirectedHome(doc.url!, first.finalUrl)) {
+        await done("extraction-failed", `The page now redirects to ${first.finalUrl}; check the document's address`);
+        continue;
+      }
+
       const previous = await latestVersion(c, platform.slug, doc.slug);
       if (looksTruncated(previous?.content, first.content)) {
         await done("extraction-failed", `Text shrank from ${previous!.content.length} to ${first.content.length} characters`);
@@ -101,34 +110,81 @@ try {
       }
 
       if (previous && !sameText(previous.content, first.content)) {
+        if (sameWording(previous.content, first.content)) {
+          await c.versions.updateOne({ _id: previous._id }, { $max: { lastSeenAt: at } });
+          await done("unchanged", "Only link addresses or formatting differ");
+          continue;
+        }
         await sleep(CONFIRM_DELAY_MS);
         const second = await fetchDocument(doc, robots);
-        if (!second.ok || !sameText(first.content, second.content)) {
+        if (!second.ok || !sameWording(first.content, second.content)) {
           await done("unstable", "Text differed between two fetches; will try again next run");
           continue;
         }
       }
 
-      const { outcome, id } = await saveVersion(c, {
-        platform: platform.slug,
-        document: doc.slug,
-        content: first.content,
-        sourceUrl: doc.url!,
-        method: "auto",
-        at,
-      });
-      await done(outcome, null);
+      let saved: Awaited<ReturnType<typeof saveVersion>>;
+      try {
+        saved = await saveVersion(c, {
+          platform: platform.slug,
+          document: doc.slug,
+          content: first.content,
+          sourceUrl: first.finalUrl,
+          method: "auto",
+          at,
+        });
+      } catch (error) {
+        if (!(error instanceof ConcurrentVersionError)) throw error;
+        await done("unstable", "An editor recorded a version at the same moment; will check again next run");
+        continue;
+      }
+      const { outcome, id } = saved;
+      await done(outcome, null, saved.at);
       if (outcome === "changed") await trySummarize(c, id, name);
     } catch (error) {
       unexpected = true;
+      if (databaseDown(error)) {
+        // Nothing can be recorded, so stop rather than keep loading other sites for nothing.
+        console.error(`${name}: the database can't be reached (${(error as Error).message}). Stopping this run.`);
+        break;
+      }
       console.error(`${name}: unexpected error`, error);
       await done("fetch-failed", `Unexpected error: ${(error as Error).message}`).catch(() => {});
     }
     await sleep(PAUSE_MS);
   }
+
+  // Summaries that failed earlier (an OpenAI outage, say) are retried here, a few per run.
+  if (process.env.OPENAI_API_KEY) await fillMissingSummaries();
 } finally {
-  await releaseLock(c, holder);
+  await releaseLock(c, holder).catch((error) => console.error(`Could not release the lock: ${(error as Error).message}`));
   await client.close();
 }
 
-process.exit(unexpected ? 1 : 0);
+const failures = ["blocked", "robots-disallowed", "extraction-failed", "fetch-failed", "unstable"];
+const failed = failures.flatMap((o) => tally.get(o) ?? []);
+const checked = [...tally.values()].reduce((n, v) => n + v.length, 0);
+console.log(
+  `${checked} of ${targets.length} checked: ` +
+    [...tally.entries()].map(([outcome, names]) => `${names.length} ${outcome}${failures.includes(outcome) ? ` (${names.join(", ")})` : ""}`).join(", "),
+);
+// Every single site failing almost always means this server's network is down, which systemd should show.
+const allFailed = checked > 0 && failed.length === checked && checked === targets.length && targets.length > 1;
+process.exit(unexpected || allFailed ? 1 : 0);
+
+async function fillMissingSummaries() {
+  const recent = await c.versions
+    .find({ previousId: { $ne: null } }, { projection: { _id: 1, platform: 1, document: 1 }, sort: { capturedAt: -1 }, limit: 50 })
+    .toArray();
+  if (recent.length === 0) return;
+  const done = new Set((await c.summaries.find({ _id: { $in: recent.map((v) => v._id) } }, { projection: { _id: 1 } }).toArray()).map((s) => s._id.toHexString()));
+  const missing = recent.filter((v) => !done.has(v._id.toHexString())).slice(0, 5);
+  for (const v of missing) {
+    try {
+      const result = await summarizeVersion(c, v._id);
+      if (result === "written") console.log(`${v.platform}/${v.document}: missing summary written`);
+    } catch (error) {
+      console.error(`${v.platform}/${v.document}: summary still failing (${(error as Error).message})`);
+    }
+  }
+}

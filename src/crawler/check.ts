@@ -1,6 +1,7 @@
 import type { Platform, TrackedDocument } from "../core/platforms.ts";
 import type { CheckOutcome } from "../core/records.ts";
 import { sha256 } from "../core/hash.ts";
+import { compareKey, toBlocks } from "../core/text.ts";
 import { ExtractionError, extractDocument } from "./extract.ts";
 import { allowedHostsFor, FetchError, isHtml, isJson, safeFetch } from "./fetch.ts";
 import type { RobotsCache } from "./robots.ts";
@@ -79,6 +80,20 @@ export function looksTruncated(previous: string | undefined, next: string): bool
 }
 
 export const sameText = (a: string, b: string) => sha256(a) === sha256(b);
+
+/**
+ * Same readable wording, ignoring link addresses and inline formatting, which
+ * the redline doesn't show either. Tracking links and signed image addresses
+ * that change on every load must not count as a change to the terms.
+ */
+export const sameWording = (a: string, b: string) => toBlocks(a).map(compareKey).join("\n") === toBlocks(b).map(compareKey).join("\n");
+
+/** A terms page that now redirects to the site's home page has moved or gone. */
+export function redirectedHome(configured: string, final: string): boolean {
+  const from = new URL(configured);
+  const to = new URL(final);
+  return from.pathname.replace(/\/+$/, "") !== "" && to.pathname.replace(/\/+$/, "") === "";
+}
 
 export function label(platform: Platform, doc: TrackedDocument): string {
   return `${platform.slug}/${doc.slug}`;

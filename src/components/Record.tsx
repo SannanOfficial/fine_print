@@ -24,9 +24,17 @@ export function StatusLine({
   if (!status && !latest) return <span className="status status-ok">Waiting for first check</span>;
 
   const outcome = status ? describeOutcome(status.lastOutcome) : null;
-  if (outcome && !outcome.ok) return <span className="status status-warn">{outcome.text}</span>;
-
   const lastChange = latest && !latest.isFirst ? `Changed ${formatDay(latest.capturedAt)}` : "No changes yet";
+  if (outcome && !outcome.ok) {
+    // Keep the most useful fact (when it last changed) next to the warning.
+    return (
+      <span className="status status-warn">
+        {latest ? `${lastChange} · ` : ""}
+        {outcome.text}
+      </span>
+    );
+  }
+
   const checked = status ? ` · checked ${formatDay(status.lastCheckedAt)}` : "";
   return (
     <span className="status status-ok">
@@ -65,14 +73,26 @@ export function Docket({
             </time>
             <div className="docket-what">
               <span>
-                <Link href={versionHref(v)} prefetch={false}>
+                <Link
+                  href={versionHref(v)}
+                  prefetch={false}
+                  title={v.isFirst ? "The first text we recorded; there is nothing earlier to compare it with" : undefined}
+                >
                   {showDocument ? `${found.platform.name}: ${found.document.title}` : describeStats(v.stats)}
                 </Link>
                 {showDocument && <span className="index-kind"> · {describeStats(v.stats)}</span>}
               </span>
               {METHOD_TAG[v.method] && <span className="method">{METHOD_TAG[v.method]}</span>}
             </div>
-            {v.summary && <p className="docket-summary">{v.summary.headline}</p>}
+            {v.summary && (
+              <p className="docket-summary">
+                {v.summary.headline}
+                <span className="index-kind">
+                  {" "}
+                  · {!v.summary.byAi ? "editor's summary" : v.summary.reviewed ? "AI summary, checked by an editor" : "AI draft, not yet checked"}
+                </span>
+              </p>
+            )}
           </li>
         );
       })}

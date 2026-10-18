@@ -15,7 +15,7 @@
   --sheet: #ffffff;
   --ink: #1d1b16;
   --ink-soft: #5a564c;
-  --ink-faint: #8b867a;
+  --ink-faint: #736e63; /* 4.8:1 on paper, passes WCAG AA for small text */
   --rule: #dcd8cc;
   --hover: #f1eee6;
   --ins: #1f4aa8;
@@ -1104,6 +1104,41 @@ del::after {
   color: var(--ink-soft);
   max-width: var(--measure);
 }
+
+/* An old version: point readers to the newer one. */
+.superseded {
+  margin-top: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--ink);
+  background: var(--hover);
+}
+.superseded.is-current {
+  border-left-color: var(--rule);
+  background: transparent;
+  padding-left: 0.9rem;
+}
+
+/* The desk: finished items are folded away. */
+.done-list {
+  margin-top: 1.25rem;
+}
+.done-list > summary {
+  cursor: pointer;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+.done-list .docket {
+  margin-top: 0.75rem;
+}
+.form-inline {
+  margin-top: 0.75rem;
+}
+
+/* Newsletter pages: one column of reading width. */
+.narrow {
+  max-width: var(--measure);
+}
 .empty {
   padding: 1.25rem 0;
   font-style: italic;
@@ -1720,11 +1755,198 @@ code {
   color: var(--ink-soft);
 }
 
+/* ---------- Who the record is for ---------- */
+
+.audiences {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0 2.25rem;
+  counter-reset: audience;
+  border-top: 1px solid var(--rule);
+}
+@media (min-width: 44rem) {
+  .audiences {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.audiences li {
+  counter-increment: audience;
+  padding: 1rem 0 1.1rem 2.4rem;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+/* A ledger numeral in the margin, as in a printed index. */
+.audiences li::before {
+  content: counter(audience, lower-roman) ".";
+  position: absolute;
+  left: 0;
+  top: 1.05rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.audience-who {
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+.audience-use {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+/* ---------- Support the record ---------- */
+
+.support-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+@media (min-width: 40rem) {
+  .support-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+}
+.support-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-top: 3px double var(--rule);
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+.support-option:first-child {
+  border-color: var(--ink);
+}
+.support-option .label {
+  margin-bottom: 0.35rem;
+}
+.support-title {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+.support-text {
+  margin: 0.3rem 0 0;
+  font-size: 1rem;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+  flex: 1;
+}
+.support-option .button {
+  display: inline-block;
+  text-decoration: none;
+  margin-top: 1.1rem;
+}
+.support-contact {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+/* ---------- Newsletter sign-up ---------- */
+
+.subscribe {
+  margin-top: 2.5rem;
+  padding: 1.25rem clamp(1rem, 4vw, 1.5rem) 1.35rem;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-top: 3px double var(--rule);
+}
+.subscribe-label {
+  display: block;
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+.subscribe .hint {
+  margin: 0.2rem 0 0.75rem;
+}
+.subscribe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.subscribe-row input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-bottom-color: var(--ink-faint);
+  border-radius: 0;
+}
+.subscribe-row .button {
+  margin: 0;
+}
+.subscribe .form-ok,
+.subscribe .form-error {
+  margin: 0.85rem 0 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* Printed redlines: clinicians take these to colleagues and lawyers. */
+@media print {
+  .skip,
+  .masthead nav,
+  .theme,
+  .subscribe,
+  .admin-bar,
+  .crumbs,
+  .cta,
+  .colophon form {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  /* Browsers drop background colours and images in print, which is where the marks live. */
+  ins,
+  del {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-image: none;
+  }
+  ins {
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+  }
+  del {
+    text-decoration: line-through;
+  }
+  .sheet,
+  .summary {
+    border-color: #999;
+  }
+  .redline-gap,
+  .doc-table {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  .full-text {
+    display: none;
   }
 }

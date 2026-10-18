@@ -20,9 +20,10 @@ export default function About() {
 
       <h2>What we capture</h2>
       <p>
-        Only documents the platforms publish openly on their own websites. For each one we store the text of the
-        agreement, the date we first saw it, and the most recent date we found it still published. Menus, cookie
-        banners and other page furniture are left out.
+        Documents the platforms publish on their own websites, and agreements clinicians send us that a platform
+        showed them privately (see below). For each version we store the text of the agreement, the date we first saw
+        it, and the most recent date we found it still published. Menus, cookie banners and other page furniture are
+        left out.
       </p>
 
       <h2>How often we check</h2>
@@ -45,8 +46,8 @@ export default function About() {
 
       <h2>Summaries</h2>
       <p>
-        Each recorded change gets a short summary in plain English, written by an AI model (OpenAI&rsquo;s GPT-5.4 mini) from
-        the changed paragraphs only. Until an editor has checked
+        Each recorded change gets a short summary in plain English, written by an OpenAI GPT model (currently GPT-5.4 mini; the
+        record of each change notes which model wrote its draft) from the changed paragraphs only. Until an editor has checked
         it, a summary is labelled as an unreviewed AI draft. Editors can correct or withdraw any summary. The redline
         is always the exact record; a summary can leave things out.
       </p>

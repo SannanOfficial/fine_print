@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders } from "node:http";
 import https from "node:https";
 import net, { type LookupFunction } from "node:net";
 import zlib from "node:zlib";
+import { contactEmail } from "../core/site.ts";
 
 /**
  * A deliberately narrow HTTP client for fetching public terms pages.
@@ -18,8 +19,69 @@ export const USER_AGENT_TOKEN = "FinePrintBot";
 
 export function userAgent(): string {
   const site = process.env.FINEPRINT_SITE_URL ?? "https://fineprint.syedsannan.com";
-  return `Mozilla/5.0 (compatible; ${USER_AGENT_TOKEN}/0.1; +${site}/about)`;
+  const contact = contactEmail();
+  // Webmasters look here before deciding whether to block a crawler.
+  return `Mozilla/5.0 (compatible; ${USER_AGENT_TOKEN}/0.1; +${site}/about${contact ? `; mailto:${contact}` : ""})`;
 }
+
+/**
+ * Turn response bytes into text using the page's own character set: the
+ * Content-Type header, else a <meta charset> near the top, else UTF-8. A page
+ * served as windows-1252 decoded as UTF-8 would put replacement characters
+ * into the permanent record.
+ */
+export function decodeBody(bytes: Buffer, contentType: string): string {
+  const fromHeader = /charset=["']?([\w-]+)/i.exec(contentType)?.[1];
+  const head = bytes.subarray(0, 4096).toString("latin1");
+  const fromMeta = /<meta[^>]+charset=["']?([\w-]+)/i.exec(head)?.[1] ?? /<\?xml[^>]+encoding=["']([\w-]+)/i.exec(head)?.[1];
+  const label = (fromHeader ?? fromMeta ?? "utf-8").toLowerCase();
+  // Browsers read Latin-1 and ASCII as windows-1252, and Node's decoder leaves
+  // that set's 0x80–0x9F range (curly quotes, dashes) as control characters.
+  if (/^(windows-1252|cp1252|iso-8859-1|iso8859-1|latin1|l1|us-ascii|ascii)$/.test(label)) {
+    return bytes.toString("latin1").replace(/[\x80-\x9f]/g, (ch) => CP1252[ch.charCodeAt(0) - 0x80] ?? ch);
+  }
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes); // unknown label
+  }
+}
+
+/** Windows-1252's 0x80–0x9F, as the WHATWG encoding standard maps it. */
+const CP1252 = [
+  "\u20ac",
+  "\x81",
+  "\u201a",
+  "\u0192",
+  "\u201e",
+  "\u2026",
+  "\u2020",
+  "\u2021",
+  "\u02c6",
+  "\u2030",
+  "\u0160",
+  "\u2039",
+  "\u0152",
+  "\x8d",
+  "\u017d",
+  "\x8f",
+  "\x90",
+  "\u2018",
+  "\u2019",
+  "\u201c",
+  "\u201d",
+  "\u2022",
+  "\u2013",
+  "\u2014",
+  "\u02dc",
+  "\u2122",
+  "\u0161",
+  "\u203a",
+  "\u0153",
+  "\x9d",
+  "\u017e",
+  "\u0178",
+];
 
 const TIMEOUT_MS = 30_000;
 const MAX_REDIRECTS = 5;
@@ -59,13 +121,30 @@ function header(headers: IncomingHttpHeaders, name: string): string {
 /** Address ranges the crawler must never connect to. */
 const PRIVATE = new net.BlockList();
 for (const [range, bits] of [
-  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
-  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.88.99.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["224.0.0.0", 3],
 ] as const) {
   PRIVATE.addSubnet(range, bits, "ipv4");
 }
 for (const [range, bits] of [
-  ["::", 127], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["64:ff9b::", 96], ["2001:db8::", 32],
+  // ::/96 also covers IPv4-compatible forms such as ::127.0.0.1; 2002::/16 is 6to4, which embeds an IPv4 address.
+  ["::", 96],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["fec0::", 10],
+  ["ff00::", 8],
+  ["64:ff9b::", 96],
+  ["2001:db8::", 32],
+  ["2002::", 16],
 ] as const) {
   PRIVATE.addSubnet(range, bits, "ipv6");
 }
@@ -130,9 +209,27 @@ function get(url: URL, accept: string, signal: AbortSignal): Promise<RawResponse
           return;
         }
 
-        const encoding = header(res.headers, "content-encoding").toLowerCase();
-        const stream =
-          encoding === "gzip" ? res.pipe(zlib.createGunzip()) : encoding === "br" ? res.pipe(zlib.createBrotliDecompress()) : res;
+        // Errors and early aborts on the response itself would otherwise leave a decompressor waiting forever.
+        res.on("error", (error) => reject(new FetchError("failed", `Read error: ${error.message}`)));
+        res.on("close", () => {
+          if (!res.complete) reject(new FetchError("failed", "The connection closed before the page finished"));
+        });
+
+        const encoding = header(res.headers, "content-encoding").toLowerCase().trim();
+        const decoder =
+          encoding === "gzip" || encoding === "x-gzip"
+            ? zlib.createGunzip()
+            : encoding === "br"
+              ? zlib.createBrotliDecompress()
+              : encoding === "deflate"
+                ? zlib.createInflate()
+                : null;
+        if (!decoder && encoding && encoding !== "identity") {
+          res.destroy();
+          reject(new FetchError("failed", `Unsupported content encoding: ${encoding}`));
+          return;
+        }
+        const stream = decoder ? res.pipe(decoder) : res;
 
         const chunks: Buffer[] = [];
         let total = 0;
@@ -146,7 +243,9 @@ function get(url: URL, accept: string, signal: AbortSignal): Promise<RawResponse
           }
           chunks.push(chunk);
         });
-        stream.on("end", () => resolve({ status, headers: res.headers, body: Buffer.concat(chunks).toString("utf8") }));
+        stream.on("end", () =>
+          resolve({ status, headers: res.headers, body: decodeBody(Buffer.concat(chunks), header(res.headers, "content-type")) }),
+        );
         stream.on("error", (error) => reject(new FetchError("failed", `Read error: ${error.message}`)));
       },
     );

@@ -37,6 +37,12 @@ try {
     { key: { adminId: 1 }, name: "by_admin" },
     { key: { expiresAt: 1 }, name: "expire_sessions", expireAfterSeconds: 0 },
   ]);
+  await db.collection(COLLECTIONS.subscribers).createIndexes([
+    { key: { emailHash: 1 }, name: "unique_email", unique: true },
+    { key: { platforms: 1 }, name: "by_platform" },
+    // Sign-ups nobody confirmed are deleted after a week.
+    { key: { expiresAt: 1 }, name: "expire_unconfirmed", expireAfterSeconds: 0 },
+  ]);
   await db.collection(COLLECTIONS.rateLimits).createIndexes([
     { key: { expiresAt: 1 }, name: "expire_counters", expireAfterSeconds: 0 },
   ]);

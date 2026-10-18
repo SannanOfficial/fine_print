@@ -61,13 +61,32 @@ export interface SubmissionRow {
   documentName: string;
   senderName: string;
   status: SubmissionStatus;
+  /** Whole days since it arrived, for "new" ones still waiting for contact. */
+  waitingDays: number;
 }
 
 export async function listSubmissions(): Promise<SubmissionRow[]> {
   const platforms = await listPlatforms();
   const rows = await (await cols()).submissions.find({}, { sort: { receivedAt: -1 }, limit: 300 }).toArray();
+  const now = Date.now();
+  const waiting = (s: SubmissionRecord) => (s.status === "new" ? Math.floor((now - s.receivedAt.getTime()) / 86_400_000) : 0);
   return rows.map((s) => {
-    const d = detailsOf(s);
+    let d: ReturnType<typeof detailsOf>;
+    try {
+      d = detailsOf(s);
+    } catch {
+      // One unreadable row (wrong key, damaged record) mustn't take down the whole desk.
+      return {
+        id: s._id.toHexString(),
+        reference: s.reference,
+        receivedAt: s.receivedAt,
+        platform: platformLabel(platforms, s.platform, s.platformOther),
+        documentName: "(can't be decrypted)",
+        senderName: "(can't be decrypted)",
+        status: s.status,
+        waitingDays: waiting(s),
+      };
+    }
     return {
       id: s._id.toHexString(),
       reference: s.reference,
@@ -76,6 +95,7 @@ export async function listSubmissions(): Promise<SubmissionRow[]> {
       documentName: d.documentName,
       senderName: d.contact.name,
       status: s.status,
+      waitingDays: waiting(s),
     };
   });
 }
@@ -96,6 +116,9 @@ export async function getSubmission(id: string) {
     updatedBy: s.updatedBy,
     details: detailsOf(s),
     notes: s.notes ? unseal(s.notes, `notes:${id}`).toString("utf8") : "",
+    recordedAs: s.recordedAs
+      ? { href: `/${s.recordedAs.platform}/${s.recordedAs.document}/${s.recordedAs.id.toHexString()}`, ...s.recordedAs }
+      : null,
   };
 }
 
@@ -234,7 +257,7 @@ export async function getDocumentForEdit(platformSlug: string, documentSlug: str
   const found = findDocument(platforms, platformSlug, documentSlug);
   if (!found) return null;
   const c = await cols();
-  const [versions, status, latest] = await Promise.all([
+  const [versions, status] = await Promise.all([
     c.versions
       .find(
         { platform: platformSlug, document: documentSlug },
@@ -246,13 +269,11 @@ export async function getDocumentForEdit(platformSlug: string, documentSlug: str
       )
       .toArray(),
     c.status.findOne({ _id: `${platformSlug}/${documentSlug}` }),
-    c.versions.findOne({ platform: platformSlug, document: documentSlug }, { sort: { capturedAt: -1, _id: -1 } }),
   ]);
   return {
     ...found,
     platforms,
     status,
-    latestContent: latest?.content ?? null,
     versions: versions.map(
       (v): AdminVersionRow => ({
         id: v._id.toHexString(),

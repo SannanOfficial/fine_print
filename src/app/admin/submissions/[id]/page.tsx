@@ -6,7 +6,7 @@ import { getSubmission, listPlatforms, STATUS_LABELS } from "@/lib/admin-data.ts
 import { requireAdmin } from "@/lib/auth.ts";
 import { formatDayTime } from "@/lib/format.ts";
 import { AdminBar } from "../../AdminBar.tsx";
-import { DeleteSubmission, SubmissionEditor } from "../../forms.tsx";
+import { DeleteSubmission, MarkContacted, SubmissionEditor } from "../../forms.tsx";
 import { ChooseDocument } from "../../platforms/forms.tsx";
 
 const kb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
@@ -23,7 +23,22 @@ export default function SubmissionPage({ params }: PageProps<"/admin/submissions
 
 async function Submission({ id }: { id: string }) {
   const admin = await requireAdmin();
-  const [s, platforms] = await Promise.all([getSubmission(id), listPlatforms()]);
+  let s: Awaited<ReturnType<typeof getSubmission>>;
+  try {
+    s = await getSubmission(id);
+  } catch (error) {
+    return (
+      <>
+        <AdminBar admin={admin} />
+        <h1 className="admin-title">This submission can&rsquo;t be read</h1>
+        <p className="note">
+          Its encrypted details could not be decrypted ({(error as Error).message}). This happens when{" "}
+          <code>FINEPRINT_DATA_KEY</code> has changed since it was received, or the record is damaged.
+        </p>
+      </>
+    );
+  }
+  const platforms = await listPlatforms();
   if (!s) notFound();
   // The platform the sender named comes first.
   const documentOptions = [...platforms]
@@ -51,6 +66,14 @@ async function Submission({ id }: { id: string }) {
         <dd>{d.receivedOn ?? "Not given"}</dd>
         <dt>Shown</dt>
         <dd>{SHOWN_VIA[d.shownVia]}</dd>
+        {s.recordedAs && (
+          <>
+            <dt>Recorded as</dt>
+            <dd>
+              <Link href={s.recordedAs.href}>{s.recordedAs.href}</Link>
+            </dd>
+          </>
+        )}
         {s.updatedBy && (
           <>
             <dt>Last updated</dt>
@@ -75,12 +98,14 @@ async function Submission({ id }: { id: string }) {
             <a href={`mailto:${encodeURIComponent(d.contact.email).replace(/%40/g, "@")}?subject=${encodeURIComponent(`Your Fine Print submission ${s.reference}`)}`}>
               {d.contact.email}
             </a>
+            {d.contact.prefers === "phone" && <span className="status-warn"> · prefers a phone call</span>}
           </dd>
           <dt>Phone</dt>
           <dd>{d.contact.phone || "Not given"}</dd>
           <dt>Prefers</dt>
           <dd>{d.contact.prefers === "phone" ? "Phone" : "Email"}</dd>
         </dl>
+        {s.status === "new" && <MarkContacted id={s.id} />}
       </section>
 
       <section className="section" aria-labelledby="text-title">

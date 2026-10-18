@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState, type ReactNode } from "react";
+import { useActionState, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Redline, RedlineLegend } from "@/components/Redline.tsx";
 import { MANUAL_REASONS } from "@/core/platforms.ts";
 import { describeStats } from "@/lib/format.ts";
@@ -206,7 +206,7 @@ export function DeleteForm({
       </Field>
       <Message state={state} />
       <button type="submit" className="button button-danger" disabled={pending}>
-        {documentSlug ? "Delete document" : "Delete platform"}
+        {pending ? "Deleting…" : documentSlug ? "Delete document" : "Delete platform"}
       </button>
     </form>
   );
@@ -214,18 +214,29 @@ export function DeleteForm({
 
 /* ---------- Recording a version ---------- */
 
+const noSubscribe = () => () => {};
+
+/** Today's date where the editor is, as YYYY-MM-DD. */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function RecordForm({
   platformSlug,
   documentSlug,
   hasUrl,
   initial,
   fromSubmission,
+  returnTo,
 }: {
   platformSlug: string;
   documentSlug: string;
   hasUrl: boolean;
   initial: RecordValues;
   fromSubmission: string | null;
+  /** Where to go after recording: back to the "Add a record" page, or the document's page. */
+  returnTo?: "record-page";
 }) {
   const [state, action, pending] = useActionState(recordVersion.bind(null, platformSlug, documentSlug), null);
   const v = state?.values ?? initial;
@@ -233,11 +244,15 @@ export function RecordForm({
   // Editing the text after a preview means the preview no longer matches it.
   const [editedAfter, setEditedAfter] = useState<number | null>(null);
   const stale = editedAfter !== null && editedAfter === state?.key;
+  // The server doesn't know the editor's time zone, so the limit is set in the browser.
+  const today = useSyncExternalStore(noSubscribe, localToday, () => undefined);
 
   return (
     <form action={action} className="form" key={state?.key}>
       <input type="hidden" name="fetchedHash" value={v.fetchedHash} />
       <input type="hidden" name="submissionId" value={v.submissionId} />
+      <input type="hidden" name="basedOn" value={v.basedOn} />
+      {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
       {fromSubmission && (
         <p className="note">
           Starting from submission <b>{fromSubmission}</b>. Remove anything that could identify the sender before you
@@ -273,9 +288,22 @@ export function RecordForm({
           onChange={() => setEditedAfter(state?.key ?? 0)}
         />
       </Field>
-      <Field id="sourceUrl" label="Where it was published" hint="Leave empty if it was never public, for example an email.">
-        <input id="sourceUrl" name="sourceUrl" type="url" defaultValue={v.sourceUrl} placeholder="https://" aria-describedby="sourceUrl-hint" />
-      </Field>
+      <div className="field-row">
+        <Field id="sourceUrl" label="Where it was published" hint="Leave empty if it was never public, for example an email.">
+          <input id="sourceUrl" name="sourceUrl" type="url" defaultValue={v.sourceUrl} placeholder="https://" aria-describedby="sourceUrl-hint" />
+        </Field>
+        <Field id="datedOn" label="Date on the document" hint="Optional. The date printed on it, or the date of the email it came in.">
+          <input
+            id="datedOn"
+            name="datedOn"
+            type="date"
+            defaultValue={v.datedOn}
+            min="1990-01-01"
+            max={today}
+            aria-describedby="datedOn-hint"
+          />
+        </Field>
+      </div>
 
       <Message state={state} />
       {preview && (
@@ -316,22 +344,30 @@ export function RecordForm({
 export function ChooseDocument({
   submissionId,
   options,
+  selected,
+  label = "Which document is it a version of?",
+  button = "Continue",
 }: {
-  submissionId: string;
+  /** From a submission: opens the document's page with the submitted text. Otherwise opens the "Add a record" page. */
+  submissionId?: string;
   options: { value: string; label: string }[];
+  selected?: string;
+  label?: string;
+  button?: string;
 }) {
   const router = useRouter();
-  const [choice, setChoice] = useState(options[0]?.value ?? "");
+  const [choice, setChoice] = useState(selected ?? options[0]?.value ?? "");
   if (options.length === 0) return <p className="empty">Add the document under Platforms first.</p>;
   return (
     <form
       className="form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (choice) router.push(`/admin/platforms/${choice}?from=${submissionId}`);
+        if (!choice) return;
+        router.push(submissionId ? `/admin/platforms/${choice}?from=${submissionId}` : `/admin/record?doc=${choice}`);
       }}
     >
-      <Field id="target" label="Which document is it a version of?" hint="If it isn’t listed, add it under Platforms first.">
+      <Field id="target" label={label} hint="If it isn’t listed, add it under Platforms first.">
         <select id="target" value={choice} onChange={(e) => setChoice(e.target.value)} aria-describedby="target-hint">
           {options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -341,7 +377,7 @@ export function ChooseDocument({
         </select>
       </Field>
       <button type="submit" className="button">
-        Continue
+        {button}
       </button>
     </form>
   );

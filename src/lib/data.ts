@@ -9,6 +9,7 @@ import {
   type StatusRecord,
   type VersionRecord,
 } from "@/core/records.ts";
+import { diffDocuments, type DiffEntry } from "@/core/diff.ts";
 import { getDb } from "./db.ts";
 
 /*
@@ -55,6 +56,8 @@ export interface VersionSummary {
 export interface VersionText extends VersionSummary {
   content: string;
   sourceUrl: string | null;
+  /** The date on the document itself (YYYY-MM-DD), when an editor recorded one. */
+  datedOn: string | null;
 }
 
 const SUMMARY_FIELDS = {
@@ -99,7 +102,7 @@ async function withSummaries<T extends VersionSummary>(list: T[]): Promise<T[]> 
 }
 
 function toText(v: VersionRecord): VersionText {
-  return { ...toSummary(v), content: v.content, sourceUrl: v.sourceUrl };
+  return { ...toSummary(v), content: v.content, sourceUrl: v.sourceUrl, datedOn: v.datedOn ?? null };
 }
 
 async function versions() {
@@ -146,6 +149,42 @@ export async function getHistory(platform?: string, document?: string): Promise<
   return withSummaries(rows.map(toSummary));
 }
 
+export interface DocumentFacts {
+  /** The newest version (without its summary). */
+  latest: VersionSummary;
+  /** How many versions are on the record. */
+  count: number;
+}
+
+/** The newest version and the number of versions of every document, keyed "platform/document". */
+export async function getDocumentFacts(): Promise<Record<string, DocumentFacts>> {
+  "use cache";
+  cacheLife("record");
+  cacheTag("versions");
+
+  // Sorting first lets the (platform, document, capturedAt) index drive the grouping.
+  const picked = Object.fromEntries(["_id", ...Object.keys(SUMMARY_FIELDS)].map((k) => [k, `$${k}`]));
+  const rows = await (await versions())
+    .aggregate<{ _id: { platform: string; document: string }; latest: SummaryRecord; count: number }>([
+      { $sort: { platform: 1, document: 1, capturedAt: -1, _id: -1 } },
+      { $group: { _id: { platform: "$platform", document: "$document" }, latest: { $first: picked }, count: { $sum: 1 } } },
+    ])
+    .toArray();
+  return Object.fromEntries(rows.map((r) => [`${r._id.platform}/${r._id.document}`, { latest: toSummary(r.latest), count: r.count }]));
+}
+
+/** The version recorded after this one, if any: old redlines say they've been superseded. */
+export async function getNextVersion(platform: string, document: string, id: string): Promise<{ id: string; capturedAt: string } | null> {
+  "use cache";
+  cacheLife("record");
+  cacheTag("versions");
+
+  if (!/^[a-f0-9]{24}$/.test(id)) return null;
+  // (platform, document, previousId) is the unique index, so this is a point lookup.
+  const row = await (await versions()).findOne({ platform, document, previousId: new ObjectId(id) }, { projection: { capturedAt: 1 } });
+  return row ? { id: row._id.toHexString(), capturedAt: row.capturedAt.toISOString() } : null;
+}
+
 /** Most recent changes across all platforms (first captures excluded). */
 export async function getRecentChanges(limit: number): Promise<VersionSummary[]> {
   "use cache";
@@ -187,4 +226,15 @@ export async function getVersionPair(
   const previous = version.previousId ? await col.findOne({ _id: version.previousId, platform, document }) : null;
   const [withSummary] = await withSummaries([toText(version)]);
   return { version: withSummary, previous: previous ? toText(previous) : null };
+}
+
+/** The redline for one change, worked out once and cached: diffing a long document is slow. */
+export async function getRedline(platform: string, document: string, id: string): Promise<DiffEntry[] | null> {
+  "use cache";
+  cacheLife("record");
+  cacheTag("versions");
+
+  const pair = await getVersionPair(platform, document, id);
+  if (!pair?.previous) return null;
+  return diffDocuments(pair.previous.content, pair.version.content);
 }

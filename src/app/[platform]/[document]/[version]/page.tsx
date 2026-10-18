@@ -5,11 +5,12 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { DocumentText } from "@/components/DocumentText.tsx";
 import { Redline, RedlineLegend } from "@/components/Redline.tsx";
+import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { SummaryBox } from "@/components/Summary.tsx";
-import { diffDocuments } from "@/core/diff.ts";
+import { contactEmail } from "@/core/site.ts";
 import type { Platform, TrackedDocument } from "@/core/platforms.ts";
 import type { CaptureMethod } from "@/core/records.ts";
-import { getVersionPair } from "@/lib/data.ts";
+import { getNextVersion, getRedline, getVersionPair } from "@/lib/data.ts";
 import { describeStats, formatDay, formatDayTime } from "@/lib/format.ts";
 import { getDocument } from "@/lib/registry.ts";
 
@@ -20,12 +21,26 @@ const CAPTURED: Record<CaptureMethod, string> = {
 };
 
 export async function generateMetadata({ params }: PageProps<"/[platform]/[document]/[version]">): Promise<Metadata> {
-  const { platform, document } = await params;
-  const found = await getDocument(platform, document);
+  const { platform, document, version } = await params;
+  const [found, pair] = await Promise.all([getDocument(platform, document), getVersionPair(platform, document, version)]);
   if (!found) return {};
+  const name = `${found.platform.name} ${found.document.title}`;
+  // Each version gets its own title and description, so shared links are distinguishable.
+  const canonical = `/${platform}/${document}/${version}`;
+  if (!pair) return { title: `Change to ${name}`, description: `What changed in ${name}, shown as a redline.` };
+  const { version: v, previous } = pair;
+  const day = formatDay(v.datedOn ? `${v.datedOn}T00:00:00Z` : v.capturedAt);
+  if (!previous) {
+    return {
+      title: `${name}: first copy, ${day}`,
+      description: `The first copy of ${found.platform.name}'s ${found.document.title} on the record, captured ${day}.`,
+      alternates: { canonical },
+    };
+  }
   return {
-    title: `Change to ${found.platform.name} ${found.document.title}`,
-    description: `What changed in ${found.platform.name}'s ${found.document.title}, shown as a redline.`,
+    title: `${name}: change of ${day}`,
+    description: `${v.summary?.headline ?? describeStats(v.stats)}. Redline against the version of ${formatDay(previous.capturedAt)}.`,
+    alternates: { canonical },
   };
 }
 
@@ -44,10 +59,13 @@ export default function VersionPage({ params }: PageProps<"/[platform]/[document
 
 async function VersionView({ platform, document, id }: { platform: Platform; document: TrackedDocument; id: string }) {
   await connection();
-  const pair = await getVersionPair(platform.slug, document.slug, id);
+  const [pair, entries, next] = await Promise.all([
+    getVersionPair(platform.slug, document.slug, id),
+    getRedline(platform.slug, document.slug, id).then((e) => e ?? []),
+    getNextVersion(platform.slug, document.slug, id),
+  ]);
   if (!pair) notFound();
   const { version, previous } = pair;
-  const entries = previous ? diffDocuments(previous.content, version.content) : [];
   const visible = entries.some((e) => e.kind !== "same");
 
   return (
@@ -59,11 +77,44 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
       <p className="eyebrow">
         {platform.name} · {document.title}
       </p>
-      <h1>{previous ? `Changed ${formatDay(version.capturedAt)}` : `First copy, ${formatDay(version.capturedAt)}`}</h1>
+      <h1>
+        {version.datedOn
+          ? `${previous ? "Changed" : "First copy,"} dated ${formatDay(`${version.datedOn}T00:00:00Z`)}`
+          : previous
+            ? `Changed ${formatDay(version.capturedAt)}`
+            : `First copy, ${formatDay(version.capturedAt)}`}
+      </h1>
+
+      {!next && (
+        <p className="note superseded is-current">
+          This is the latest version on the record
+          {version.method === "auto"
+            ? `, last seen published ${formatDay(version.lastSeenAt)}`
+            : version.method === "submission"
+              ? ". It was shared privately by a clinician, so the public page may say something else"
+              : ", recorded by hand"}
+          . <Link href={`/${platform.slug}/${document.slug}`}>See the document&rsquo;s history</Link>.
+        </p>
+      )}
+      {next && (
+        <p className="note superseded">
+          This isn&rsquo;t the current text.{" "}
+          <Link href={`/${platform.slug}/${document.slug}/${next.id}`}>
+            A newer version was recorded {formatDay(next.capturedAt)}
+          </Link>
+          , or <Link href={`/${platform.slug}/${document.slug}`}>read the current text</Link>.
+        </p>
+      )}
 
       <dl className="facts">
         <dt>Recorded</dt>
         <dd>{formatDayTime(version.capturedAt)}</dd>
+        {version.datedOn && (
+          <>
+            <dt>Dated</dt>
+            <dd>{formatDay(`${version.datedOn}T00:00:00Z`)}, according to the document or the email it came in</dd>
+          </>
+        )}
         {previous && (
           <>
             <dt>Compared with</dt>
@@ -126,6 +177,19 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
           </>
         )}
       </section>
+
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} />
+      <p className="note" style={{ marginTop: "1.5rem" }}>
+        Spotted a mistake in this record, or have a newer copy of these terms?{" "}
+        <Link href="/submit">Share it privately</Link>
+        {contactEmail() && (
+          <>
+            {" "}
+            or write to <a href={`mailto:${contactEmail()}`}>{contactEmail()}</a>
+          </>
+        )}
+        .
+      </p>
     </>
   );
 }

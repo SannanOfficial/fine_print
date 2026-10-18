@@ -24,6 +24,9 @@ export async function summarizeVersion(c: SummaryCollections, id: ObjectId, { fo
   const existing = await c.summaries.findOne({ _id: id }, { projection: { state: 1 } });
   if (existing && existing.state !== "automatic" && !force) return "kept";
 
+  // Only links or formatting changed: there is no wording to summarise.
+  const stats = version.stats;
+  if (stats && stats.added + stats.removed + stats.changed === 0) return "skipped";
   const previous = await c.versions.findOne({ _id: version.previousId });
   const platform = await c.platforms.findOne({ _id: version.platform });
   const document = platform?.documents.find((d) => d.slug === version.document);
@@ -38,24 +41,32 @@ export async function summarizeVersion(c: SummaryCollections, id: ObjectId, { fo
     model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
   });
   const now = new Date();
-  await c.summaries.updateOne(
-    { _id: id },
-    {
-      $set: {
-        platform: version.platform,
-        document: version.document,
-        headline: summary.headline,
-        points: summary.points,
-        state: "automatic",
-        model: summary.model,
-        generatedAt: now,
-        updatedAt: now,
-        updatedBy: null,
-      },
-    },
-    { upsert: true },
-  );
-  return "written";
+  const fields = {
+    platform: version.platform,
+    document: version.document,
+    headline: summary.headline,
+    points: summary.points,
+    state: "automatic" as const,
+    model: summary.model,
+    generatedAt: now,
+    updatedAt: now,
+    updatedBy: null,
+  };
+  if (force) {
+    await c.summaries.updateOne({ _id: id }, { $set: fields }, { upsert: true });
+    return "written";
+  }
+  // The model call takes a while. If an editor reviewed or hid the summary in
+  // the meantime, their version stays.
+  const updated = await c.summaries.updateOne({ _id: id, state: "automatic" }, { $set: fields });
+  if (updated.matchedCount > 0) return "written";
+  try {
+    await c.summaries.insertOne({ _id: id, ...fields });
+    return "written";
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) return "kept";
+    throw error;
+  }
 }
 
 /** Same as summarizeVersion, but logs instead of throwing: a failed summary must never fail a crawl. */

@@ -19,8 +19,8 @@ export function SummaryBox({ summary }: { summary: ChangeSummary }) {
         {!summary.byAi
           ? "Summary written by a Fine Print editor."
           : summary.reviewed
-            ? "Summary written with AI and checked by a Fine Print editor."
-            : "Summary written automatically by AI and not yet checked by an editor."}{" "}
+            ? "Summary drafted by an OpenAI GPT model and checked by a Fine Print editor."
+            : "Summary written by an OpenAI GPT model and not yet checked by an editor."}{" "}
         It may leave things out. The redline below is the exact record.
       </p>
     </aside>

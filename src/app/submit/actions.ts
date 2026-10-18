@@ -2,6 +2,10 @@
 
 import { randomInt, randomUUID } from "node:crypto";
 import { ObjectId } from "mongodb";
+import { after } from "next/server";
+import { mailConfigured, sendMail, siteUrl } from "@/core/mailer.ts";
+import { receiptEmail } from "@/core/newsletter-email.ts";
+import { contactEmail } from "@/core/site.ts";
 import { getPlatform } from "@/lib/registry.ts";
 import {
   COLLECTIONS,
@@ -72,14 +76,7 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
   const fail = (message: string): SubmitState => ({ status: "error", message, errors, values, key: randomUUID() });
 
   // Bots fill in every field, including this one, which people never see.
-  if (text(form, "website")) return { status: "sent", reference: newReference(), email: values.email };
-
-  const ip = await clientIp();
-  const allowed =
-    (await withinLimit("submit-hour", ip, 5, 3600)) &&
-    (await withinLimit("submit-day", ip, 20, 86_400)) &&
-    (await withinLimit("submit-all", "all", 500, 86_400));
-  if (!allowed) return fail("We have received a lot of submissions from your connection. Please try again tomorrow.");
+  if (text(form, "website")) return { status: "sent", reference: newReference(), email: values.email, phone: "", prefers: "email" };
 
   // ----- What was shown -----
   if (values.platform !== "other" && !(await getPlatform(values.platform))) errors.platform = "Choose the platform.";
@@ -93,7 +90,7 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
       errors.receivedOn = "Enter a real date, not in the future.";
     }
   }
-  if (!(values.shownVia in SHOWN_VIA)) errors.shownVia = "Choose how you were shown it.";
+  if (!Object.hasOwn(SHOWN_VIA, values.shownVia)) errors.shownVia = "Choose how you were shown it.";
   if (values.text.length > LIMITS.text) errors.text = `Paste at most ${LIMITS.text.toLocaleString("en-US")} characters, or attach a file instead.`;
 
   // ----- Files -----
@@ -132,6 +129,15 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
     );
   }
 
+  // Counted only once the answers are complete, so fixing mistakes never uses up the limit.
+  const ip = await clientIp();
+  if (!(await withinLimit("submit-hour", ip, 5, 3600))) {
+    return fail("We have received several submissions from your connection in the last hour. Please try again in an hour.");
+  }
+  if (!(await withinLimit("submit-day", ip, 20, 86_400)) || !(await withinLimit("submit-all", "all", 500, 86_400))) {
+    return fail("We have received a lot of submissions today. Please try again tomorrow.");
+  }
+
   // ----- Save, encrypted -----
   const db = await getDb();
   const id = new ObjectId();
@@ -151,9 +157,10 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
     },
   };
 
+  const fileStore = db.collection<SubmissionFileRecord>(COLLECTIONS.submissionFiles);
   try {
     if (files.length > 0) {
-      await db.collection<SubmissionFileRecord>(COLLECTIONS.submissionFiles).insertMany(
+      await fileStore.insertMany(
         files.map((f) => ({
           _id: f.id,
           submissionId: id,
@@ -185,9 +192,23 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
         reference = newReference();
       }
     }
-    return { status: "sent", reference, email: values.email };
+    if (mailConfigured()) {
+      // A receipt, so the sender has the reference and knows we can reach them. Sent after the reply.
+      const to = values.email;
+      const ref = reference;
+      after(async () => {
+        try {
+          await sendMail({ to, ...receiptEmail({ reference: ref, siteUrl: siteUrl()!, contact: contactEmail() }) });
+        } catch (error) {
+          console.error(`Submission receipt email failed: ${(error as Error).message}`);
+        }
+      });
+    }
+    return { status: "sent", reference, email: values.email, phone: values.phone, prefers: values.prefers };
   } catch (error) {
     console.error("Saving a submission failed:", (error as Error).message);
+    // Don't leave files behind without the submission they belong to.
+    await fileStore.deleteMany({ submissionId: id }).catch(() => {});
     return fail("We could not save your submission just now. Nothing was stored. Please try again in a few minutes.");
   }
 }

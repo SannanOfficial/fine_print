@@ -1,9 +1,30 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useSyncExternalStore, type ChangeEvent, type ReactNode } from "react";
 import { SHOWN_VIA } from "@/core/records.ts";
 import { submitAgreement } from "./actions.ts";
 import { LIMITS, type SubmitState, type SubmitValues } from "./limits.ts";
+
+const noSubscribe = () => () => {};
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Check attachments in the browser: an upload over the server's size limit would otherwise fail without a message. */
+function checkFiles(event: ChangeEvent<HTMLInputElement>) {
+  const input = event.currentTarget;
+  const files = [...(input.files ?? [])];
+  const total = files.reduce((n, f) => n + f.size, 0);
+  const problem =
+    files.length > LIMITS.files
+      ? `Attach at most ${LIMITS.files} files.`
+      : total > LIMITS.totalBytes
+        ? `These files are ${(total / 1048576).toFixed(1)} MB together; the limit is 8 MB. Try fewer or smaller files.`
+        : "";
+  input.setCustomValidity(problem);
+  if (problem) input.reportValidity();
+}
 
 const EMPTY: SubmitValues = {
   platform: "",
@@ -78,19 +99,52 @@ const describe = (id: string, error?: string, hint = false) => ({
   "aria-describedby": [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined,
 });
 
-export function SubmitForm({ platforms }: { platforms: { slug: string; name: string }[] }) {
+export function SubmitForm({ platforms, contact }: { platforms: { slug: string; name: string }[]; contact: string | null }) {
   const [state, action, pending] = useActionState<SubmitState, FormData>(submitAgreement, { status: "idle" });
+  const today = useSyncExternalStore(noSubscribe, localToday, () => undefined);
+  const top = useRef<HTMLDivElement>(null);
+
+  // After the server answers, move focus to what needs attention (or to the
+  // receipt), since the form is re-created and the message is out of view.
+  useEffect(() => {
+    if (state.status === "idle") return;
+    const target =
+      state.status === "error"
+        ? (document.querySelector<HTMLElement>('form [aria-invalid="true"]') ?? top.current)
+        : top.current;
+    target?.focus();
+    target?.scrollIntoView({ block: "center" });
+  }, [state]);
 
   if (state.status === "sent") {
     return (
-      <div className="receipt" role="status">
+      <div className="receipt" role="status" ref={top} tabIndex={-1}>
         <p className="receipt-label">Received</p>
         <p className="receipt-ref">{state.reference}</p>
         <p>
-          Thank you. Keep this reference. We will contact you at <strong>{state.email}</strong> to confirm the details
-          before anything is published, usually within a week. Nothing you sent is public.
+          Thank you. Keep this reference. We will contact you{" "}
+          {state.prefers === "phone" && state.phone ? (
+            <>
+              by phone at <strong>{state.phone}</strong> (or by email at {state.email})
+            </>
+          ) : (
+            <>
+              at <strong>{state.email}</strong>
+            </>
+          )}{" "}
+          to confirm the details before anything is published, usually within a week. Nothing you sent is public.
         </p>
-        <p>If you need to withdraw your submission, reply to our message or quote the reference above.</p>
+        <p>
+          To withdraw or add to your submission,{" "}
+          {contact ? (
+            <>
+              email <a href={`mailto:${contact}?subject=${encodeURIComponent(`Submission ${state.reference}`)}`}>{contact}</a>
+            </>
+          ) : (
+            "reply to our message"
+          )}{" "}
+          and quote the reference above.
+        </p>
       </div>
     );
   }
@@ -100,11 +154,13 @@ export function SubmitForm({ platforms }: { platforms: { slug: string; name: str
 
   return (
     <form action={action} className="form" key={state.status === "error" ? state.key : "new"}>
-      {state.status === "error" && (
-        <p className="form-error" role="alert">
-          {state.message}
-        </p>
-      )}
+      <div ref={top} tabIndex={-1}>
+        {state.status === "error" && (
+          <p className="form-error" role="alert">
+            {state.message}
+          </p>
+        )}
+      </div>
 
       <fieldset>
         <legend>What you were shown</legend>
@@ -143,7 +199,7 @@ export function SubmitForm({ platforms }: { platforms: { slug: string; name: str
 
         <div className="field-row">
           <Field id="receivedOn" label="When did you receive it?" optional error={e.receivedOn}>
-            <input {...describe("receivedOn", e.receivedOn)} type="date" defaultValue={v.receivedOn} />
+            <input {...describe("receivedOn", e.receivedOn)} type="date" defaultValue={v.receivedOn} min="2000-01-01" max={today} />
           </Field>
           <Field id="shownVia" label="How was it shown to you?" error={e.shownVia}>
             <select {...describe("shownVia", e.shownVia)} defaultValue={v.shownVia} required>
@@ -179,6 +235,7 @@ export function SubmitForm({ platforms }: { platforms: { slug: string; name: str
             {...describe("files", e.files, true)}
             type="file"
             multiple
+            onChange={checkFiles}
             accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml,application/pdf,image/png,image/jpeg,image/webp,text/plain,message/rfc822"
           />
         </Field>

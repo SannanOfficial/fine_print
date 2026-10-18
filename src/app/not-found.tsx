@@ -9,7 +9,8 @@ export default function NotFound() {
         The platform or document may not be tracked, or the link may be incomplete.
       </p>
       <p style={{ marginTop: "1.5rem" }}>
-        <Link href="/#platforms">See all tracked platforms</Link>
+        <Link href="/#platforms">See all tracked platforms</Link>, or <Link href="/submit">share an agreement</Link> if
+        you have terms we don&rsquo;t track yet.
       </p>
     </section>
   );

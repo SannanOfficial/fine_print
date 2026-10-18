@@ -1,4 +1,5 @@
-import { COLLECTIONS, type PlatformRecord } from "@/core/records.ts";
+import { ObjectId } from "mongodb";
+import { COLLECTIONS, type PlatformRecord, type VersionRecord } from "@/core/records.ts";
 import { getDb } from "./mongo.ts";
 
 /*
@@ -37,4 +38,33 @@ export async function isKnownPath(platform: string, document?: string): Promise<
 
 export function forgetKnownPaths(): void {
   store.fineprintPaths = undefined;
+}
+
+/*
+ * Which version ids exist. Versions are never deleted, so a "yes" can be kept
+ * for as long as the process lives; a "no" is kept briefly, in case the
+ * version is being written right now. The map is capped so random ids
+ * can't grow it without limit.
+ */
+const NEGATIVE_TTL_MS = 30_000;
+const MAX_VERSION_ENTRIES = 5_000;
+const versionStore = globalThis as unknown as { fineprintVersions?: Map<string, { at: number; exists: boolean }> };
+
+/** True, false, or null when the database could not be reached. */
+export async function isKnownVersion(platform: string, document: string, id: string): Promise<boolean | null> {
+  const key = `${platform}/${document}/${id}`;
+  const cache = (versionStore.fineprintVersions ??= new Map());
+  const hit = cache.get(key);
+  const now = Date.now();
+  if (hit && (hit.exists || now - hit.at < NEGATIVE_TTL_MS)) return hit.exists;
+  try {
+    const row = await (await getDb())
+      .collection<VersionRecord>(COLLECTIONS.versions)
+      .findOne({ _id: new ObjectId(id), platform, document }, { projection: { _id: 1 } });
+    if (cache.size >= MAX_VERSION_ENTRIES) cache.clear();
+    cache.set(key, { at: now, exists: row !== null });
+    return row !== null;
+  } catch {
+    return null;
+  }
 }

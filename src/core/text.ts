@@ -3,24 +3,55 @@
  * characters, line endings) never shows up as a "change" to a document.
  */
 export function normalizeMarkdown(markdown: string): string {
-  return markdown
-    .normalize("NFC")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[   ]/g, " ") // non-breaking spaces
-    .replace(/[​-‍⁠﻿]/g, "") // zero-width characters
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+$/g, ""))
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    markdown
+      .normalize("NFC")
+      .replace(/\r\n?/g, "\n")
+      // Every kind of space (no-break, thin, hair, ideographic…) becomes a plain one.
+      .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, " ")
+      // Invisible characters: zero-width spaces and joiners, soft hyphens, direction marks, BOM.
+      .replace(/[\u00ad\u061c\u200b-\u200f\u2060-\u2064\u2066-\u206f\ufeff]/g, "")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+$/g, ""))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
+
+/**
+ * The same text whatever the typography: curly or straight quotes, any dash,
+ * an ellipsis or three dots. Used only for comparing, never for what is
+ * stored or shown, so a site switching to "smart quotes" is not a change
+ * to its terms.
+ */
+export function foldTypography(text: string): string {
+  return text
+    .replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'")
+    .replace(/[\u201c\u201d\u201e\u201f\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
+/**
+ * What two blocks are compared by. Besides typography, a list item's number
+ * is ignored, so inserting one item doesn't turn every item after it into
+ * an "edit".
+ */
+export function compareKey(block: string): string {
+  return foldTypography(block).replace(/^(\s*)\d+[.)](\s+)/, "$11.$2");
 }
 
 /** Remove inline Markdown (links, emphasis, escapes) and keep the readable text. */
 export function stripInline(text: string): string {
   return text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1") // images -> alt text
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links -> link text
-    .replace(/\*\*|__/g, "") // bold markers
+    // Addresses may contain one level of parentheses, as Wikipedia's do.
+    .replace(/!\[([^\]]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/g, "$1") // images -> alt text
+    .replace(/\[([^\]]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/g, "$1") // links -> link text
+    .replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, "$1") // **bold**
+    .replace(/__(?=\S)([\s\S]+?)(?<=\S)__/g, "$1") // __bold__
     .replace(/(^|[^\w*])\*(?!\s)([^*]+?)\*(?=[^\w*]|$)/g, "$1$2") // *em*
     .replace(/(^|[^\w])_(?!\s)([^_]+?)_(?=[^\w]|$)/g, "$1$2") // _em_
     .replace(/`([^`]*)`/g, "$1")
@@ -38,7 +69,11 @@ export function stripInline(text: string): string {
 export function toBlocks(markdown: string): string[] {
   const blocks: string[] = [];
   for (const chunk of markdown.split(/\n{2,}/)) {
-    const lines = chunk.split("\n").filter((l) => l.trim() !== "");
+    // Quoted passages read as their text; the ">" is layout.
+    const lines = chunk
+      .split("\n")
+      .map((l) => l.replace(/^\s*(?:>\s?)+/, ""))
+      .filter((l) => l.trim() !== "");
     if (lines.length === 0) continue;
 
     if (lines.every((l) => l.trimStart().startsWith("|"))) {

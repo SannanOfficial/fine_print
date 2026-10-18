@@ -1,0 +1,13 @@
+# Mondays at 14:00 UTC (around 9 or 10 a.m. US Eastern), after the
+# morning crawl. A missed run (server was down) runs at boot; each
+# subscriber's email still covers everything since their last one.
+
+[Unit]
+Description=Fine Print: weekly email of recorded changes
+
+[Timer]
+OnCalendar=Mon *-*-* 14:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

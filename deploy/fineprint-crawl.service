@@ -20,7 +20,8 @@ Type=oneshot
 User=fineprint
 Group=fineprint
 WorkingDirectory=/srv/fine_print
-# Holds MONGODB_WRITE_URI. Only this service should be able to read it.
+# Holds MONGODB_WRITE_URI, OPENAI_API_KEY (for summaries), FINEPRINT_SITE_URL and FINEPRINT_CONTACT_EMAIL
+# (both go into the crawler's User-Agent). Only this service should be able to read it.
 EnvironmentFile=/etc/fineprint/crawler.env
 ExecStart=/usr/bin/node scripts/crawl.ts
 TimeoutStartSec=45min
@@ -44,6 +45,9 @@ LockPersonality=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
 SystemCallArchitectures=native
+SystemCallFilter=@system-service
+ProtectProc=invisible
+ProcSubset=pid
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077
 MemoryMax=512M

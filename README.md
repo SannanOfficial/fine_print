@@ -12,10 +12,12 @@ scripts/crawl.ts        Checks each automatic document, records new versions,
                         and asks an AI model for a summary of each change.
 scripts/capture.ts      Imports a page saved in a browser, for sites we can't fetch.
 scripts/summarize.ts    Writes missing summaries, or redoes one.
+scripts/status.ts       One-screen health report of the record and the jobs.
 scripts/admin.ts        Creates and manages admin accounts.
+scripts/newsletter.ts   Sends the weekly email of changes to subscribers.
 src/app/                The website (Next.js 16): the public record, the private
                         submission form (/submit) and the admin pages (/admin).
-deploy/                 systemd timer that runs the crawler twice a day.
+deploy/                 systemd timers: the crawler (twice a day) and the weekly newsletter.
 ```
 
 There are two processes with separate database users:
@@ -51,13 +53,14 @@ db.createRole({
     { resource: { db: "fine_print", collection: "" }, actions: ["find"] },
     { resource: { db: "fine_print", collection: "platforms" }, actions: ["insert", "update", "remove"] },
     { resource: { db: "fine_print", collection: "versions" }, actions: ["insert"] },
-    { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update"] },
+    { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update", "remove"] },
     { resource: { db: "fine_print", collection: "checks" }, actions: ["insert"] },
     { resource: { db: "fine_print", collection: "submissions" }, actions: ["insert", "update", "remove"] },
     { resource: { db: "fine_print", collection: "submission_files" }, actions: ["insert", "remove"] },
     { resource: { db: "fine_print", collection: "summaries" }, actions: ["insert", "update"] },
     { resource: { db: "fine_print", collection: "sessions" }, actions: ["insert", "remove"] },
     { resource: { db: "fine_print", collection: "rate_limits" }, actions: ["insert", "update"] },
+    { resource: { db: "fine_print", collection: "subscribers" }, actions: ["insert", "update", "remove"] },
   ],
   roles: [],
 })
@@ -65,14 +68,15 @@ db.createUser({ user: "fineprint_site", pwd: passwordPrompt(), roles: ["fineprin
 db.createUser({ user: "fineprint_crawler", pwd: passwordPrompt(), roles: [{ role: "readWrite", db: "fine_print" }] })
 ```
 
-If you created the role before admins could add records, add the new permissions with:
+If you created the role earlier, add the newer permissions (admins recording versions, and the newsletter) with:
 
 ```js
 db.grantPrivilegesToRole("fineprintSite", [
   { resource: { db: "fine_print", collection: "platforms" }, actions: ["insert", "update", "remove"] },
   { resource: { db: "fine_print", collection: "versions" }, actions: ["insert"] },
-  { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update"] },
+  { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update", "remove"] },
   { resource: { db: "fine_print", collection: "checks" }, actions: ["insert"] },
+  { resource: { db: "fine_print", collection: "subscribers" }, actions: ["insert", "update", "remove"] },
 ])
 ```
 
@@ -88,13 +92,15 @@ Generate the encryption key for private submissions with `openssl rand -base64 3
 - Never runs page JavaScript. HTML is parsed as text and only the element named by the document's `selectors` is kept.
 - Limits: 30 s timeout, 5 redirects, 5 MB per page.
 - **Confirms changes:** when the text differs from the last version, it waits 90 seconds and fetches again. It records a change only if both fetches agree.
-- **Rejects broken extractions:** if the text suddenly shrinks by more than half, it flags an extraction failure instead of recording a "change". This usually means the site's layout changed and a selector needs updating.
+- **Rejects broken extractions:** if the text suddenly shrinks by more than half, it flags an extraction failure instead of recording a "change". This usually means the site's layout changed and a selector needs updating. If the document really did get that much shorter, record the new text once by hand at `/admin/record`; the crawler then compares against it.
+- **Ignores typography and links:** curly or straight quotes, dashes, link addresses and inline formatting don't count as a change in wording. Pages are decoded in their own character set, so a page served as windows-1252 is stored correctly.
+- **Stops when the database is down**, rather than keep loading sites it can't record. It prints a one-line tally at the end of each run and exits non-zero only when every site failed (almost always this server's own network).
 - A lock in the database prevents overlapping runs.
 - **Help-centre articles:** documents hosted on a Zendesk help centre (Alma's and Rula's provider terms) are marked `source: "zendesk-api"`. The crawler reads them from the help centre's public article API (`/api/v2/help_center/<locale>/articles/<id>.json`), which returns the same text as the page. The page itself sits behind a browser-only Cloudflare check. robots.txt is checked for the API address as usual.
 
 - **Summaries:** after recording a change, it sends the changed paragraphs (never the whole document, never anything private) to OpenAI and stores a short plain-language summary. Default model `gpt-5.4-mini`, about a cent per change; set `OPENAI_MODEL` to change it. A failed summary never fails the crawl. Run `npm run summarize` to fill any gaps.
 
-Every check is logged to the `checks` collection, which keeps 180 days. Each document's latest result, including internal error details, is in `status`. The website shows only a plain-language summary.
+Every check is logged to the `checks` collection, which keeps 180 days. Each document's latest result, including internal error details, is in `status`. The website shows only a plain-language summary. `npm run status` prints it all in one screen, and exits with code 2 when a document has failed three checks in a row, which a cron job or health-check service can watch.
 
 ### Schedule
 
@@ -132,6 +138,17 @@ Clinicians can send terms or policy updates they were shown privately at `/submi
 - Submissions are never sent to an AI service.
 - Admins review them at `/admin`. They can set a status, keep private notes, and delete a submission for good. Once confirmed, **Add to the record** opens the matching document's recording form with the submitted text filled in. The version is marked "Shared by a clinician", with no public address, and the submission is marked "Added to the record".
 
+## Newsletter
+
+Anyone can subscribe on a platform's page (or any of its documents' pages) to a weekly email about that platform. The address they type is kept in the browser tab's `sessionStorage` and filled in on the next platform's form, still editable.
+
+- **Confirmed first.** A sign-up only sends a confirmation email. Nothing else is sent until its owner clicks the link and presses **Confirm** (a plain visit changes nothing, so link scanners can't confirm). Unconfirmed sign-ups delete themselves after 7 days. The reply is the same whether or not an address is already subscribed, and sign-ups are limited per address and per IP.
+- **Private.** Addresses are encrypted with `FINEPRINT_DATA_KEY`, and found by a keyed hash. Links in emails are signed with the same key, so they can't be guessed or altered.
+- **Weekly.** `npm run newsletter` emails each subscriber the changes recorded since their last email on the platforms they follow: the date, how much changed, the AI summary (labelled, and left out if an editor hid it), and a link to the redline. **Anyone with no changes gets nothing.** Each subscriber's place only moves on once their email is sent, so a failed send is retried next week and running it twice sends nothing twice. `--dry-run` shows who would get what.
+- **Easy to leave.** Every email links to a page to change platforms or unsubscribe (which deletes the address), and carries one-click unsubscribe headers for mail apps.
+
+Email goes out over SMTP, so any provider works (Postmark, Resend, Amazon SES, Mailgun…). Set `MAIL_FROM` and `SMTP_URL` for both the website (confirmation emails) and the newsletter job. For local testing, set `MAIL_OUTBOX_DIR` instead of `SMTP_URL`: emails are written to that folder as `.eml` files and nothing is sent. To schedule it, install `deploy/fineprint-newsletter.timer` (Mondays, 14:00 UTC) like the crawler's.
+
 ## Admins
 
 There is no sign-up page. Accounts exist only if someone with database access creates them:
@@ -143,7 +160,7 @@ npm run admin -- disable editor@example.com             # blocks sign-in, signs 
 npm run admin -- list
 ```
 
-Sign in at `/admin/login`. Sessions last 12 hours, in an HttpOnly, Secure, SameSite=Strict cookie. Only a hash of the session token is stored. Sign-in is limited to 5 attempts per account and 20 per IP address every 15 minutes.
+Sign in at `/admin/login`. Sessions last 12 hours, in an HttpOnly, Secure, SameSite=Strict cookie. Only a hash of the session token is stored. Only failed sign-ins count against the limits: 5 per account from one address, 30 per account and 20 per address every 15 minutes.
 
 ## Adding a platform
 
@@ -155,7 +172,10 @@ Short names (the `simplepractice` in `/simplepractice/terms-of-service`) can't b
 
 - Run `next build`, then `next start` behind a reverse proxy (Caddy or nginx) that terminates TLS and rate-limits requests.
 - The site caches database reads in memory for up to 10 minutes (the `record` profile in `next.config.ts`), so a busy link barely touches MongoDB.
-- Give the web process `MONGODB_SITE_URI` and `FINEPRINT_DATA_KEY`. Give the crawler service `MONGODB_WRITE_URI` and `OPENAI_API_KEY` (in `/etc/fineprint/crawler.env`). Neither needs the other's secrets.
+- Give the web process `MONGODB_SITE_URI`, `FINEPRINT_DATA_KEY`, `FINEPRINT_SITE_URL` (links in emails; with `SMTP_URL` set, no email is sent without it), `MAIL_FROM`, `SMTP_URL`, and `OPENAI_API_KEY` if versions recorded at `/admin` should get AI summaries. Give the crawler service `MONGODB_WRITE_URI` and `OPENAI_API_KEY` (in `/etc/fineprint/crawler.env`). Give the newsletter service `MONGODB_WRITE_URI`, `FINEPRINT_DATA_KEY`, `MAIL_FROM`, `SMTP_URL` and `FINEPRINT_SITE_URL` (in `/etc/fineprint/newsletter.env`).
+- Set `FINEPRINT_CONTACT_EMAIL` to an address a person reads. It appears in the footer, on submission receipts and in the crawler's User-Agent, and is the reply address of every email the site sends.
+- Set up SPF, DKIM and DMARC for the sending domain with your email provider, or the weekly emails will land in spam.
+- The systemd units forbid writing anywhere (`ProtectSystem=strict`). If you ever point the newsletter service at `MAIL_OUTBOX_DIR`, add `ReadWritePaths=` for that folder.
 - The reverse proxy must **overwrite** the client address headers, so visitors can't fake their IP address to get around rate limits. With nginx: `proxy_set_header X-Real-IP $remote_addr;` and `proxy_set_header X-Forwarded-For $remote_addr;`. Caddy sets these correctly by default.
 - Submissions can be up to 9 MB, so allow that body size in the proxy (`client_max_body_size 10m;` in nginx).
 - If you ever run more than one instance of the website, set the same `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` on all of them.
@@ -164,7 +184,7 @@ Short names (the `simplepractice` in `/simplepractice/terms-of-service`) can't b
 ## Tests
 
 ```bash
-npm test          # diff, text normalisation and summary input
+npm test          # diff, text, crawler checks, links and the newsletter
 npm run lint
 npm run typecheck # run `npx next typegen` first on a fresh clone
 ```

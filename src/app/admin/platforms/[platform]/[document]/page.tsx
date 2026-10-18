@@ -107,6 +107,8 @@ async function DocumentEditor({ platformSlug, documentSlug, query }: { platformS
             sourceUrl: submission ? "" : (doc.url ?? ""),
             fetchedHash: "",
             submissionId: submission?.id ?? "",
+            datedOn: "",
+            basedOn: "",
           }}
         />
       </section>
@@ -162,6 +164,12 @@ async function DocumentEditor({ platformSlug, documentSlug, query }: { platformS
             hint="Stops tracking this document. Only possible while nothing has been recorded for it."
           />
         </section>
+      )}
+      {versions.length > 0 && (
+        <p className="note">
+          This document can&rsquo;t be deleted because it has versions on the record, which stay public for good. To stop
+          automatic checks, set it to &ldquo;By hand&rdquo; under Settings.
+        </p>
       )}
     </>
   );

@@ -96,6 +96,12 @@ async function PlatformEditor({ slug, notice }: { slug: string; notice: "added" 
           <DeleteForm platformSlug={p.slug} hint="Removes the platform and its documents. Only possible while nothing has been recorded for it." />
         </section>
       )}
+      {hasVersions && (
+        <p className="note">
+          This platform can&rsquo;t be deleted because it has versions on the record, which stay public for good. To stop
+          automatic checks, set each document to &ldquo;By hand&rdquo; in its settings.
+        </p>
+      )}
     </>
   );
 }

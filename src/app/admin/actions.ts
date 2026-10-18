@@ -1,7 +1,7 @@
 "use server";
 
 import { ObjectId } from "mongodb";
-import { updateTag } from "next/cache";
+import { refresh, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   COLLECTIONS,
@@ -12,10 +12,13 @@ import {
   type SubmissionStatus,
   type VersionRecord,
 } from "@/core/records.ts";
-import { checkCredentials, endSession, requireAdmin, startSession } from "@/lib/auth.ts";
+import { summarizeVersion } from "@/crawler/summary.ts";
+import { adminForAction, checkCredentials, endSession, SESSION_EXPIRED, startSession } from "@/lib/auth.ts";
 import { getDb } from "@/lib/db.ts";
-import { clientIp, withinLimit } from "@/lib/limits.ts";
+import { clientIp, limitReached, withinLimit } from "@/lib/limits.ts";
 import { seal } from "@/lib/seal.ts";
+import { afterLogin } from "@/lib/session-cookie.ts";
+import type { PlatformRecord } from "@/core/records.ts";
 
 /*
  * Every action here is a public POST endpoint, so each one checks the
@@ -23,7 +26,13 @@ import { seal } from "@/lib/seal.ts";
  * calls it being on an admin page is not a security check.
  */
 
-export type FormState = { ok: boolean; message: string } | null;
+export type FormState = {
+  ok: boolean;
+  message: string;
+  /** What was submitted, so the form can show it again rather than reset to the saved values. */
+  values?: Record<string, string>;
+  key?: number;
+} | null;
 
 const field = (form: FormData, name: string) => {
   const value = form.get(name);
@@ -38,15 +47,27 @@ export async function login(_previous: FormState, form: FormData): Promise<FormS
   const password = field(form, "password").slice(0, 256);
   if (!email || !password) return { ok: false, message: "Enter your email and password." };
 
+  const values = { email };
   const ip = await clientIp();
-  const allowed = (await withinLimit("login-ip", ip, 20, 900)) && (await withinLimit("login-email", email, 5, 900));
-  if (!allowed) return { ok: false, message: "Too many attempts. Wait 15 minutes and try again." };
+  // Only failed attempts count, so signing in often is fine. The per-address
+  // limit is looser than the per-address-and-IP one, so a stranger who knows
+  // an editor's email can't easily lock them out.
+  const blocked =
+    (await limitReached("login-ip", ip, 20, 900)) ||
+    (await limitReached("login-email-ip", `${email}|${ip}`, 5, 900)) ||
+    (await limitReached("login-email", email, 30, 900));
+  if (blocked) return { ok: false, message: "Too many failed attempts. Wait 15 minutes and try again.", values, key: Date.now() };
 
   const admin = await checkCredentials(email, password);
-  if (!admin) return { ok: false, message: "That email and password don’t match an admin account." };
+  if (!admin) {
+    await withinLimit("login-ip", ip, 20, 900);
+    await withinLimit("login-email-ip", `${email}|${ip}`, 5, 900);
+    await withinLimit("login-email", email, 30, 900);
+    return { ok: false, message: "That email and password don’t match an admin account.", values, key: Date.now() };
+  }
 
   await startSession(admin._id);
-  redirect("/admin");
+  redirect(afterLogin(field(form, "next")));
 }
 
 export async function logout(): Promise<void> {
@@ -57,12 +78,14 @@ export async function logout(): Promise<void> {
 /* ---------- Submissions ---------- */
 
 export async function updateSubmission(id: string, _previous: FormState, form: FormData): Promise<FormState> {
-  const admin = await requireAdmin();
-  if (!isId(id)) return { ok: false, message: "Unknown submission." };
   const status = field(form, "status") as SubmissionStatus;
-  if (!(status in STATUS_LABELS)) return { ok: false, message: "Choose a status." };
   const notes = field(form, "notes").replace(/\r\n?/g, "\n").trim();
-  if (notes.length > 20_000) return { ok: false, message: "Notes are limited to 20,000 characters." };
+  const reply = (ok: boolean, message: string): FormState => ({ ok, message, values: { status, notes }, key: Date.now() });
+  const admin = await adminForAction();
+  if (!admin) return reply(false, SESSION_EXPIRED);
+  if (!isId(id)) return reply(false, "Unknown submission.");
+  if (!Object.hasOwn(STATUS_LABELS, status)) return reply(false, "Choose a status.");
+  if (notes.length > 20_000) return reply(false, "Notes are limited to 20,000 characters.");
 
   const result = await (await getDb()).collection<SubmissionRecord>(COLLECTIONS.submissions).updateOne(
     { _id: new ObjectId(id) },
@@ -75,12 +98,25 @@ export async function updateSubmission(id: string, _previous: FormState, form: F
       },
     },
   );
-  if (result.matchedCount === 0) return { ok: false, message: "This submission no longer exists." };
-  return { ok: true, message: "Saved." };
+  if (result.matchedCount === 0) return reply(false, "This submission no longer exists.");
+  return reply(true, "Saved.");
+}
+
+/** One click after writing to the sender, so the desk shows who is waiting on whom. */
+export async function markContacted(id: string): Promise<FormState> {
+  const admin = await adminForAction();
+  if (!admin) return { ok: false, message: SESSION_EXPIRED };
+  if (!isId(id)) return { ok: false, message: "Unknown submission." };
+  const result = await (await getDb())
+    .collection<SubmissionRecord>(COLLECTIONS.submissions)
+    .updateOne({ _id: new ObjectId(id), status: "new" }, { $set: { status: "contacted", updatedAt: new Date(), updatedBy: admin.email } });
+  if (result.matchedCount === 0) return { ok: false, message: "This submission is no longer marked as new." };
+  refresh();
+  return { ok: true, message: "Marked as contacted." };
 }
 
 export async function deleteSubmission(id: string, _previous: FormState, form: FormData): Promise<FormState> {
-  await requireAdmin();
+  if (!(await adminForAction())) return { ok: false, message: SESSION_EXPIRED };
   if (!isId(id)) return { ok: false, message: "Unknown submission." };
   if (field(form, "confirm").trim().toLowerCase() !== "delete") {
     return { ok: false, message: "Type “delete” to confirm." };
@@ -95,11 +131,14 @@ export async function deleteSubmission(id: string, _previous: FormState, form: F
 /* ---------- Change summaries ---------- */
 
 export async function saveSummary(id: string, _previous: FormState, form: FormData): Promise<FormState> {
-  const admin = await requireAdmin();
-  if (!isId(id)) return { ok: false, message: "Unknown change." };
+  const values = { headline: field(form, "headline"), points: field(form, "points") };
+  const reply = (ok: boolean, message: string): FormState => ({ ok, message, values, key: Date.now() });
+  const admin = await adminForAction();
+  if (!admin) return reply(false, SESSION_EXPIRED);
+  if (!isId(id)) return reply(false, "Unknown change.");
 
   const intent = field(form, "intent");
-  if (intent !== "publish" && intent !== "hide") return { ok: false, message: "Unknown action." };
+  if (intent !== "publish" && intent !== "hide") return reply(false, "Unknown action.");
   const tidy = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s{2,}/g, " ").trim();
   const headline = tidy(field(form, "headline"));
   const points = field(form, "points")
@@ -108,17 +147,17 @@ export async function saveSummary(id: string, _previous: FormState, form: FormDa
     .filter(Boolean);
 
   if (intent === "publish") {
-    if (!headline) return { ok: false, message: "Write a one-sentence headline." };
-    if (headline.length > 300) return { ok: false, message: "Keep the headline under 300 characters." };
-    if (points.length > 8) return { ok: false, message: "Use at most 8 points." };
-    if (points.some((p) => p.length > 500)) return { ok: false, message: "Keep each point under 500 characters." };
+    if (!headline) return reply(false, "Write a one-sentence headline.");
+    if (headline.length > 300) return reply(false, "Keep the headline under 300 characters.");
+    if (points.length > 8) return reply(false, "Use at most 8 points.");
+    if (points.some((p) => p.length > 500)) return reply(false, "Keep each point under 500 characters.");
   }
 
   const db = await getDb();
   const version = await db
     .collection<VersionRecord>(COLLECTIONS.versions)
     .findOne({ _id: new ObjectId(id), previousId: { $ne: null } }, { projection: { platform: 1, document: 1 } });
-  if (!version) return { ok: false, message: "This change no longer exists." };
+  if (!version) return reply(false, "This change no longer exists.");
 
   const summaries = db.collection<ChangeSummaryRecord>(COLLECTIONS.summaries);
   const existing = await summaries.findOne({ _id: version._id }, { projection: { headline: 1, points: 1 } });
@@ -140,5 +179,31 @@ export async function saveSummary(id: string, _previous: FormState, form: FormDa
     { upsert: true },
   );
   updateTag("summaries");
-  return { ok: true, message: intent === "publish" ? "Published as reviewed." : "Hidden from the public site." };
+  return reply(true, intent === "publish" ? "Published as reviewed." : "Hidden from the public site.");
+}
+
+/** Ask the AI for a new draft, replacing whatever is there (including reviewed text). */
+export async function redraftSummary(id: string, _previous: FormState, form: FormData): Promise<FormState> {
+  if (!(await adminForAction())) return { ok: false, message: SESSION_EXPIRED };
+  if (!isId(id)) return { ok: false, message: "Unknown change." };
+  if (form.get("confirm") !== "yes") return { ok: false, message: "Tick the box to confirm the current summary may be replaced." };
+  if (!process.env.OPENAI_API_KEY) return { ok: false, message: "AI drafts aren't set up on this server (OPENAI_API_KEY is not set)." };
+  const db = await getDb();
+  try {
+    const result = await summarizeVersion(
+      {
+        platforms: db.collection<PlatformRecord>(COLLECTIONS.platforms),
+        versions: db.collection<VersionRecord>(COLLECTIONS.versions),
+        summaries: db.collection<ChangeSummaryRecord>(COLLECTIONS.summaries),
+      },
+      new ObjectId(id),
+      { force: true },
+    );
+    if (result !== "written") return { ok: false, message: "There is nothing to summarise for this change." };
+  } catch (error) {
+    console.error(`Summary for ${id} failed: ${(error as Error).message}`);
+    return { ok: false, message: "The AI draft failed. Try again in a minute." };
+  }
+  updateTag("summaries");
+  return { ok: true, message: "New AI draft written. Check it against the redline, then publish it as reviewed." };
 }

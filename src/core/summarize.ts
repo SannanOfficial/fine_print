@@ -107,24 +107,29 @@ export async function generateSummary(input: {
   if (!brief) throw new SummaryError("No wording changed, so there is nothing to summarise.");
   const model = input.model || DEFAULT_MODEL;
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(90_000),
-    body: JSON.stringify({
+  const response = await withRetries(() =>
+    fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify({
       model,
       instructions: INSTRUCTIONS,
       input: `Document: ${input.platformName}, ${input.documentTitle}\n\n<changes>\n${brief}\n</changes>`,
       reasoning: { effort: "low" },
       max_output_tokens: 4_000,
       store: false,
-      text: { format: { type: "json_schema", name: "change_summary", strict: true, schema: SCHEMA } },
+        text: { format: { type: "json_schema", name: "change_summary", strict: true, schema: SCHEMA } },
+      }),
     }),
-  });
+  );
 
   const body = (await response.json().catch(() => null)) as OpenAIResponse | null;
   if (!response.ok || !body) {
     throw new SummaryError(`OpenAI returned ${response.status}: ${body?.error?.message ?? "no details"}`);
+  }
+  if (body.status === "incomplete") {
+    throw new SummaryError(`The model stopped early (${body.incomplete_details?.reason ?? "unknown reason"}).`);
   }
 
   const content = body.output?.flatMap((item) => (item.type === "message" ? (item.content ?? []) : []));
@@ -147,8 +152,28 @@ export async function generateSummary(input: {
   return { headline, points, model: body.model ?? model };
 }
 
+/** Rate limits, server errors, timeouts and network failures get two more tries, a little apart. */
+async function withRetries(call: () => Promise<Response>): Promise<Response> {
+  const delays = [2_000, 8_000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await call();
+      if ((response.status === 429 || response.status >= 500) && attempt < delays.length) {
+        await response.body?.cancel().catch(() => {});
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (attempt >= delays.length) throw error;
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+}
+
 interface OpenAIResponse {
   status?: string;
+  incomplete_details?: { reason?: string };
   model?: string;
   error?: { message?: string };
   output?: {

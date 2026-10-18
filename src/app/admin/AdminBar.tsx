@@ -7,7 +7,9 @@ export function AdminBar({ admin }: { admin: Admin }) {
     <div className="admin-bar">
       <nav aria-label="Admin">
         <Link href="/admin">Editor&rsquo;s desk</Link>
+        <Link href="/admin/record">Add a record</Link>
         <Link href="/admin/platforms">Platforms</Link>
+        <Link href="/">View site</Link>
       </nav>
       <form action={logout}>
         {admin.name} ·{" "}

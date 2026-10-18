@@ -14,7 +14,9 @@ export default function LoginPage() {
       <Suspense>
         <SignedInRedirect />
       </Suspense>
-      <LoginForm />
+      <Suspense>
+        <LoginForm />
+      </Suspense>
     </>
   );
 }

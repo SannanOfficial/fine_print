@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { contactEmail } from "@/core/site.ts";
 import { getPlatforms } from "@/lib/registry.ts";
 import { SubmitForm } from "./SubmitForm.tsx";
 
@@ -28,7 +29,7 @@ export default function SubmitPage() {
         <h2>What happens next</h2>
         <ol className="plain-steps">
           <li>Your submission is encrypted as soon as it arrives. Only Fine Print&rsquo;s editors can open it.</li>
-          <li>An editor contacts you to confirm where it came from and when you received it.</li>
+          <li>An editor contacts you, usually within a week, to confirm where it came from and when you received it.</li>
           <li>
             Once confirmed, the text can be added to the public record. Your name, contact details and anything that
             identifies you are never published.
@@ -50,5 +51,5 @@ export default function SubmitPage() {
 async function LiveForm() {
   await connection();
   const platforms = await getPlatforms();
-  return <SubmitForm platforms={platforms.map((p) => ({ slug: p.slug, name: p.name }))} />;
+  return <SubmitForm platforms={platforms.map((p) => ({ slug: p.slug, name: p.name }))} contact={contactEmail()} />;
 }

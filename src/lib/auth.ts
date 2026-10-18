@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { ObjectId } from "mongodb";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { cache } from "react";
 import { DUMMY_HASH, verifyPassword } from "@/core/password.ts";
 import { COLLECTIONS, type AdminRecord, type SessionRecord } from "@/core/records.ts";
@@ -71,6 +72,7 @@ export async function endSession(): Promise<void> {
 export const currentAdmin = cache(async (): Promise<Admin | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token || !TOKEN.test(token)) return null;
+  await connection(); // the expiry check reads the clock, which must happen at request time
   const { admins, sessions } = await db();
   const session = await sessions.findOne({ _id: tokenHash(token), expiresAt: { $gt: new Date() } });
   if (!session) return null;
@@ -87,3 +89,15 @@ export async function requireAdmin(): Promise<Admin> {
   if (!admin) redirect("/admin/login");
   return admin;
 }
+
+/**
+ * For server actions that return a message: null when signed out, so the
+ * action can say so and give the editor's input back instead of redirecting
+ * away from a half-filled form.
+ */
+export async function adminForAction(): Promise<Admin | null> {
+  return currentAdmin();
+}
+
+export const SESSION_EXPIRED =
+  "You've been signed out. Sign in again in a new tab (your work here is kept), then press the button again.";

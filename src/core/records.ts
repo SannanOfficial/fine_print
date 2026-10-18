@@ -32,6 +32,8 @@ export const COLLECTIONS = {
   sessions: "sessions",
   /** Counters for login and submission rate limits. Expire automatically. */
   rateLimits: "rate_limits",
+  /** Newsletter subscribers. Addresses are encrypted. */
+  subscribers: "subscribers",
 
   // Managed only with `npm run admin`:
   admins: "admins",
@@ -78,6 +80,12 @@ export interface VersionRecord {
   method: CaptureMethod;
   /** Admin who recorded it by hand, if any. Never shown publicly. */
   recordedBy?: string;
+  /**
+   * The date printed on the document or on the email that carried it
+   * (YYYY-MM-DD), as entered by an editor. Only for versions recorded by
+   * hand; `capturedAt` is always when we recorded it.
+   */
+  datedOn?: string | null;
   previousId: ObjectId | null;
   /** Paragraph-level change counts against the previous version. */
   stats: ChangeStats | null;
@@ -199,6 +207,8 @@ export interface SubmissionRecord {
   sealed: Binary;
   /** Admin notes, encrypted. */
   notes: Binary | null;
+  /** The version recorded from it, once an editor adds it to the record. */
+  recordedAs?: { platform: string; document: string; id: ObjectId };
 }
 
 export interface SubmissionFileRecord {
@@ -234,4 +244,27 @@ export interface RateLimitRecord {
   _id: string;
   count: number;
   expiresAt: Date;
+}
+
+/* ---------- Newsletter ---------- */
+
+export interface SubscriberRecord {
+  _id: ObjectId;
+  /** Keyed hash of the lowercased address, for finding a subscriber without decrypting. */
+  emailHash: string;
+  /** The address, encrypted (context "subscriber:<id>"). */
+  email: Binary;
+  /** Platforms whose changes this person has confirmed they want. */
+  platforms: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  /** Set until the first confirmation; the record is deleted automatically after it. */
+  expiresAt: Date | null;
+  /** Every change recorded up to this moment has been covered by a weekly email. */
+  digestCursor: Date | null;
+  lastSentAt: Date | null;
+  /** Part of every link sent to this address. Unsubscribing deletes the record, which voids them all. */
+  tokenVersion: number;
+  /** Weekly sends in a row that the receiving server refused outright; the address is dropped after a few. */
+  bounces?: number;
 }

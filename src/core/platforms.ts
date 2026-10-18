@@ -196,7 +196,7 @@ export const SEED_PLATFORMS: Platform[] = [
 ];
 
 /** Top-level routes that a platform slug must never shadow. */
-export const RESERVED_SLUGS = new Set(["about", "admin", "api", "submit", "_next", "robots.txt", "sitemap.xml"]);
+export const RESERVED_SLUGS = new Set(["about", "admin", "api", "newsletter", "submit", "_next", "robots.txt", "sitemap.xml"]);
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const MANUAL_REASONS = { blocked: BLOCKED_BY_SITE, browser: NEEDS_BROWSER } as const;
 

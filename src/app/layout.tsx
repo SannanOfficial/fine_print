@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Source_Serif_4 } from "next/font/google";
 import Link from "next/link";
 import { headScript, ThemeToggle } from "@/components/ThemeToggle.tsx";
+import { contactEmail } from "@/core/site.ts";
 import "./reset.css";
 import "./globals.css";
 
@@ -32,6 +33,7 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const contact = contactEmail();
   return (
     <html lang="en" className={serif.variable} suppressHydrationWarning>
       <head>
@@ -60,6 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             platform listed here. Always read the current agreement on the platform&rsquo;s own site before you sign.
           </p>
           <p>
+            Corrections and questions: <a href={`mailto:${contact}`}>{contact}</a>.{" "}
             Powered by <a href="https://syedsannan.com">syedsannan.com</a>. All dates are in UTC.
           </p>
         </footer>

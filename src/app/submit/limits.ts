@@ -26,4 +26,4 @@ export interface SubmitValues {
 export type SubmitState =
   | { status: "idle" }
   | { status: "error"; message: string; errors: Record<string, string>; values: SubmitValues; key: string }
-  | { status: "sent"; reference: string; email: string };
+  | { status: "sent"; reference: string; email: string; phone: string; prefers: "email" | "phone" };

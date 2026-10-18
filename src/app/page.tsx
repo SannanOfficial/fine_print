@@ -3,8 +3,9 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { CheckTimeline, ClauseDrift, ClauseSpecimen, EmailVersusChanges, HowItWorks, TwoSources } from "@/components/Infographics.tsx";
 import { Docket, StatusLine } from "@/components/Record.tsx";
-import { documentKey, type Platform } from "@/core/platforms.ts";
-import { getHistory, getRecentChanges, getStatuses, type PublicStatus, type VersionSummary } from "@/lib/data.ts";
+import { documentKey, findDocument, type Platform } from "@/core/platforms.ts";
+import { contactEmail, PATREON_URL } from "@/core/site.ts";
+import { getDocumentFacts, getRecentChanges, getStatuses, type DocumentFacts, type PublicStatus } from "@/lib/data.ts";
 import { getPlatforms } from "@/lib/registry.ts";
 
 export default function Home() {
@@ -80,7 +81,7 @@ export default function Home() {
         <TwoSources />
         <div className="prose">
           <p>
-            Software watches every public page, around the clock. Clinicians fill in the rest. When a platform shows
+            Software checks every public page twice a day. Clinicians fill in the rest. When a platform shows
             you new terms, send them in. An editor confirms each submission with the person who sent it before it
             joins the record, and senders are never named.
           </p>
@@ -131,25 +132,107 @@ export default function Home() {
           <RecentChanges />
         </Suspense>
       </section>
+
+      <section className="section" aria-labelledby="who-title">
+        <h2 id="who-title">Who the record is for</h2>
+        <div className="prose">
+          <p>
+            Anyone who has to decide whether to trust a platform with their practice, or who speaks for those who do.
+          </p>
+        </div>
+        <ol className="audiences">
+          {AUDIENCES.map((a) => (
+            <li key={a.who}>
+              <p className="audience-who">{a.who}</p>
+              <p className="audience-use">{a.use}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="section support" aria-labelledby="support-title">
+        <h2 id="support-title">Support the record</h2>
+        <div className="prose">
+          <p>
+            Fine Print is kept by one maintainer and the clinicians who contribute to it. There are two ways to help.
+          </p>
+        </div>
+        <div className="support-grid">
+          <div className="support-option">
+            <p className="label">The most useful</p>
+            <p className="support-title">Share an agreement</p>
+            <p className="support-text">
+              Terms a platform sent you by email, in its app or as a contract to sign. Your copy may be the only
+              evidence they were ever offered. Confirmed with you first, never published with your name.
+            </p>
+            <Link href="/submit" className="button button-primary">
+              Share an agreement privately
+            </Link>
+          </div>
+          <div className="support-option">
+            <p className="label">Optional</p>
+            <p className="support-title">Support its upkeep</p>
+            <p className="support-text">
+              Servers, checks twice a day and the hours spent confirming submissions all cost something. If the record
+              is useful to you, a small monthly contribution keeps it running and independent. The record stays free
+              for everyone either way.
+            </p>
+            <a href={PATREON_URL} className="button" rel="noopener noreferrer">
+              Support on Patreon
+            </a>
+          </div>
+        </div>
+        <p className="support-contact">
+          Questions, corrections, or a platform we should track? Write to{" "}
+          <a href={`mailto:${contactEmail()}`}>{contactEmail()}</a>.
+        </p>
+      </section>
     </>
   );
 }
 
+const AUDIENCES = [
+  {
+    who: "Practices choosing software",
+    use: "Group practices and clinics comparing EHRs, billing services and networks can see how each vendor has treated its terms over time, and choose providers that behave ethically, not just ones that advertise it.",
+  },
+  {
+    who: "Clinicians asked to accept",
+    use: "Before you click “Accept and continue”, see exactly what changed since the version you signed, word for word, instead of relying on a one-line email.",
+  },
+  {
+    who: "Practice managers and compliance",
+    use: "Keep a dated copy of the agreement in force on any given day, for audits, disputes, credentialing files and contract renewals.",
+  },
+  {
+    who: "Professional associations and advocates",
+    use: "Spot a trend across platforms early, point members to the exact clause, and negotiate with evidence rather than anecdotes.",
+  },
+  {
+    who: "Journalists and researchers",
+    use: "Cite a permanent, public record of what a platform asked for and when, including versions that were quietly withdrawn.",
+  },
+  {
+    who: "Attorneys and advisers",
+    use: "Read the redline between two dates in seconds, rather than reconstructing old terms from screenshots and memory.",
+  },
+] as const;
+
 async function LivePlatformIndex() {
   await connection();
-  const [platforms, statuses, history] = await Promise.all([getPlatforms(), getStatuses(), getHistory()]);
+  const [platforms, statuses, facts] = await Promise.all([getPlatforms(), getStatuses(), getDocumentFacts()]);
   if (platforms.length === 0) return <p className="empty">No platforms are tracked yet.</p>;
-  return <PlatformIndex platforms={platforms} statuses={statuses} history={history} />;
+  return <PlatformIndex platforms={platforms} statuses={statuses} facts={facts} />;
 }
 
 function PlatformIndex({
   platforms,
   statuses,
-  history,
+  facts,
 }: {
   platforms: Platform[];
   statuses: Record<string, PublicStatus>;
-  history: VersionSummary[];
+  facts: Record<string, DocumentFacts>;
 }) {
   return (
     <ul className="index">
@@ -163,7 +246,7 @@ function PlatformIndex({
           </p>
           <ul className="index-docs">
             {p.documents.map((d) => {
-              const latest = history.find((v) => v.platform === p.slug && v.document === d.slug);
+              const latest = facts[documentKey(p.slug, d.slug)]?.latest;
               return (
                 <li key={d.slug}>
                   <Link href={`/${p.slug}/${d.slug}`}>{d.title}</Link>
@@ -181,7 +264,8 @@ function PlatformIndex({
 
 async function RecentChanges() {
   await connection();
-  const [changes, platforms] = await Promise.all([getRecentChanges(12), getPlatforms()]);
+  const [all, platforms] = await Promise.all([getRecentChanges(12), getPlatforms()]);
+  const changes = all.filter((v) => findDocument(platforms, v.platform, v.document));
   if (changes.length === 0) {
     return (
       <p className="empty">

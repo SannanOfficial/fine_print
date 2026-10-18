@@ -18,9 +18,13 @@ export async function clientIp(): Promise<string> {
  * events have happened in the current window. Keys are hashed before
  * storage; counters expire on their own.
  */
-export async function withinLimit(bucket: string, key: string, max: number, windowSeconds: number): Promise<boolean> {
+function windowId(bucket: string, key: string, windowSeconds: number) {
   const window = Math.floor(Date.now() / 1000 / windowSeconds);
-  const id = `${bucket}:${keyedHash(key)}:${window}`;
+  return { id: `${bucket}:${keyedHash(key)}:${window}`, window };
+}
+
+export async function withinLimit(bucket: string, key: string, max: number, windowSeconds: number): Promise<boolean> {
+  const { id, window } = windowId(bucket, key, windowSeconds);
   const row = await (await getDb())
     .collection<RateLimitRecord>(COLLECTIONS.rateLimits)
     .findOneAndUpdate(
@@ -29,4 +33,11 @@ export async function withinLimit(bucket: string, key: string, max: number, wind
       { upsert: true, returnDocument: "after" },
     );
   return (row?.count ?? 1) <= max;
+}
+
+/** Whether `max` events have already been counted in the current window, without counting one. */
+export async function limitReached(bucket: string, key: string, max: number, windowSeconds: number): Promise<boolean> {
+  const { id } = windowId(bucket, key, windowSeconds);
+  const row = await (await getDb()).collection<RateLimitRecord>(COLLECTIONS.rateLimits).findOne({ _id: id });
+  return (row?.count ?? 0) >= max;
 }

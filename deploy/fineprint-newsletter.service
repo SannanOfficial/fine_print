@@ -1,0 +1,53 @@
+# Sends the weekly Fine Print email. Started by fineprint-newsletter.timer.
+#
+# Install:
+#   sudo cp deploy/fineprint-newsletter.service deploy/fineprint-newsletter.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fineprint-newsletter.timer
+#
+# Check:  systemctl list-timers fineprint-newsletter.timer
+# Logs:   journalctl -u fineprint-newsletter.service
+#
+# Adjust User, WorkingDirectory, EnvironmentFile and the node path to your server.
+
+[Unit]
+Description=Fine Print: send the weekly email of recorded changes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=fineprint
+Group=fineprint
+WorkingDirectory=/srv/fine_print
+# Holds MONGODB_WRITE_URI, FINEPRINT_DATA_KEY, MAIL_FROM, SMTP_URL and
+# FINEPRINT_SITE_URL. Only this service should be able to read it.
+EnvironmentFile=/etc/fineprint/newsletter.env
+ExecStart=/usr/bin/node scripts/newsletter.ts
+TimeoutStartSec=30min
+
+# Sandboxing: it only needs the database and the mail server.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=512M

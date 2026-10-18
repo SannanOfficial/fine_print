@@ -36,10 +36,12 @@ export async function saveVersion(
     method: CaptureMethod;
     at: Date;
     recordedBy?: string;
+    /** The date on the document itself (YYYY-MM-DD), when an editor gives one. */
+    datedOn?: string | null;
     /** Update the latest version's "still published" date when nothing changed. The website can't, and skips it. */
     touchUnchanged?: boolean;
   },
-): Promise<{ outcome: "first-capture" | "changed" | "unchanged"; id: ObjectId }> {
+): Promise<{ outcome: "first-capture" | "changed" | "unchanged"; id: ObjectId; at: Date }> {
   const hash = sha256(input.content);
   const previous = await latestVersion(c, input.platform, input.document);
 
@@ -47,10 +49,11 @@ export async function saveVersion(
     if (input.touchUnchanged !== false) {
       await c.versions.updateOne({ _id: previous._id }, { $max: { lastSeenAt: input.at } });
     }
-    return { outcome: "unchanged", id: previous._id };
+    return { outcome: "unchanged", id: previous._id, at: input.at };
   }
 
   const id = new ObjectId();
+  const savedAt = new Date(Math.max(Date.now(), (previous?.capturedAt.getTime() ?? 0) + 1));
   try {
     await c.versions.insertOne({
       _id: id,
@@ -58,13 +61,16 @@ export async function saveVersion(
       document: input.document,
       content: input.content,
       hash,
-      capturedAt: input.at,
-      lastSeenAt: input.at,
+      // The time of saving, not of the fetch: the crawler waits between fetches,
+      // and a version must never be dated before the one it follows.
+      capturedAt: savedAt,
+      lastSeenAt: savedAt,
       sourceUrl: input.sourceUrl,
       method: input.method,
       previousId: previous?._id ?? null,
       stats: previous ? summarize(diffDocuments(previous.content, input.content)) : null,
       ...(input.recordedBy ? { recordedBy: input.recordedBy } : {}),
+      ...(input.datedOn ? { datedOn: input.datedOn } : {}),
     });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
@@ -72,7 +78,7 @@ export async function saveVersion(
     }
     throw error;
   }
-  return { outcome: previous ? "changed" : "first-capture", id };
+  return { outcome: previous ? "changed" : "first-capture", id, at: savedAt };
 }
 
 const FAILURES: CheckOutcome[] = ["blocked", "robots-disallowed", "extraction-failed", "fetch-failed", "unstable"];
