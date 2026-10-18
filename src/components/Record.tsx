@@ -18,8 +18,14 @@ export function StatusLine({
   status: PublicStatus | undefined;
   latest: VersionSummary | undefined;
 }) {
-  if (!latest && doc.mode === "manual") {
-    return <span className="status status-warn">Waiting for a copy captured by hand</span>;
+  if (doc.mode === "manual") {
+    // The crawler doesn't check these, so its last attempt (often "blocked") isn't news.
+    if (!latest) return <span className="status">Not captured yet</span>;
+    return (
+      <span className="status status-ok">
+        {latest.isFirst ? "No changes yet" : `Changed ${formatDay(latest.capturedAt)}`} · captured by hand
+      </span>
+    );
   }
   if (!status && !latest) return <span className="status status-ok">Waiting for first check</span>;
 

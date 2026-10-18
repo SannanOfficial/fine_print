@@ -58,7 +58,9 @@ async function DocumentEditor({ platformSlug, documentSlug, query }: { platformS
     <>
       <AdminBar admin={admin} />
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/admin/platforms">All platforms</Link> / <Link href={`/admin/platforms/${platform.slug}`}>{platform.name}</Link>
+        <Link href="/admin/platforms">All platforms</Link>
+        <span aria-hidden="true"> / </span>
+        <Link href={`/admin/platforms/${platform.slug}`}>{platform.name}</Link>
       </nav>
       <p className="eyebrow">{platform.name}</p>
       <h1>{doc.title}</h1>

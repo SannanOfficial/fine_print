@@ -4,15 +4,18 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { DocumentText } from "@/components/DocumentText.tsx";
+import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { Redline, RedlineLegend } from "@/components/Redline.tsx";
 import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { SummaryBox } from "@/components/Summary.tsx";
 import { contactEmail } from "@/core/site.ts";
 import type { Platform, TrackedDocument } from "@/core/platforms.ts";
 import type { CaptureMethod } from "@/core/records.ts";
-import { getNextVersion, getRedline, getVersionPair } from "@/lib/data.ts";
-import { describeStats, formatDay, formatDayTime } from "@/lib/format.ts";
+import { getNextVersion, getRedline, getVersionPair, type VersionText } from "@/lib/data.ts";
+import { describeStats, formatDay, formatDayTime, possessive } from "@/lib/format.ts";
+import { pageMetadata } from "@/lib/meta.ts";
 import { getDocument } from "@/lib/registry.ts";
+import { breadcrumbs, documentEntity, JsonLd, webPage } from "@/lib/structured-data.tsx";
 
 const CAPTURED: Record<CaptureMethod, string> = {
   auto: "Automatically, from the public page",
@@ -22,26 +25,55 @@ const CAPTURED: Record<CaptureMethod, string> = {
 
 export async function generateMetadata({ params }: PageProps<"/[platform]/[document]/[version]">): Promise<Metadata> {
   const { platform, document, version } = await params;
-  const [found, pair] = await Promise.all([getDocument(platform, document), getVersionPair(platform, document, version)]);
+  const [found, pair, next] = await Promise.all([
+    getDocument(platform, document),
+    getVersionPair(platform, document, version),
+    getNextVersion(platform, document, version),
+  ]);
   if (!found) return {};
-  const name = `${found.platform.name} ${found.document.title}`;
-  // Each version gets its own title and description, so shared links are distinguishable.
-  const canonical = `/${platform}/${document}/${version}`;
-  if (!pair) return { title: `Change to ${name}`, description: `What changed in ${name}, shown as a redline.` };
+  if (!pair) return { title: `Change to ${found.platform.name} ${found.document.title}` };
+  const { title, description } = describeVersion(found.platform, found.document, pair, next);
+  return pageMetadata({
+    title,
+    description,
+    path: `/${platform}/${document}/${version}`,
+    article: { publishedTime: pair.version.capturedAt, section: found.platform.name },
+  });
+}
+
+/**
+ * Each version gets its own title, heading and description, so shared links
+ * and search results are distinguishable. When another version was recorded
+ * the same day, the time tells them apart.
+ */
+function describeVersion(
+  platform: Platform,
+  document: TrackedDocument,
+  pair: { version: VersionText; previous: VersionText | null },
+  next: { capturedAt: string } | null,
+) {
+  const name = `${platform.name} ${document.title}`;
   const { version: v, previous } = pair;
-  const day = formatDay(v.datedOn ? `${v.datedOn}T00:00:00Z` : v.capturedAt);
+  const sameDay = [previous?.capturedAt, next?.capturedAt].some((d) => d && formatDay(d) === formatDay(v.capturedAt));
+  const day = v.datedOn ? formatDay(`${v.datedOn}T00:00:00Z`) : sameDay ? formatDayTime(v.capturedAt) : formatDay(v.capturedAt);
+  const heading = v.datedOn ? `${previous ? "Change" : "First copy,"} dated ${day}` : previous ? `Changed ${day}` : `First copy, ${day}`;
   if (!previous) {
     return {
+      day,
+      heading,
       title: `${name}: first copy, ${day}`,
-      description: `The first copy of ${found.platform.name}'s ${found.document.title} on the record, captured ${day}.`,
-      alternates: { canonical },
+      description: `The first copy of ${possessive(platform.name)} ${document.title} on the record, captured ${day}, word for word.`,
     };
   }
-  return {
-    title: `${name}: change of ${day}`,
-    description: `${v.summary?.headline ?? describeStats(v.stats)}. Redline against the version of ${formatDay(previous.capturedAt)}.`,
-    alternates: { canonical },
-  };
+  // Link previews show the description as fact, so an AI draft no editor has checked says so.
+  const s = v.summary;
+  const gist = !s ? describeStats(v.stats) : s.byAi && !s.reviewed ? `AI summary, not yet checked: ${s.headline}` : s.headline;
+  // Search results show about 160 characters: the gist first, then context if it fits.
+  const sentence = `${gist.replace(/\.$/, "")}.`;
+  const before = formatDay(previous.capturedAt) === formatDay(v.capturedAt) ? formatDayTime(previous.capturedAt) : formatDay(previous.capturedAt);
+  const full = `${sentence} Redline of ${possessive(platform.name)} ${document.title} against the version of ${before}.`;
+  const description = full.length <= 160 ? full : sentence.length <= 160 ? sentence : `${sentence.slice(0, 157).replace(/\s+\S*$/, "")}…`;
+  return { day, heading, title: `${name}: change of ${day}`, description };
 }
 
 export default function VersionPage({ params }: PageProps<"/[platform]/[document]/[version]">) {
@@ -67,22 +99,40 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
   if (!pair) notFound();
   const { version, previous } = pair;
   const visible = entries.some((e) => e.kind !== "same");
+  const path = `/${platform.slug}/${document.slug}/${id}`;
+  const described = describeVersion(platform, document, pair, next);
 
   return (
     <>
+      <JsonLd
+        data={[
+          webPage({
+            path,
+            name: described.title,
+            description: described.description,
+            datePublished: version.capturedAt,
+            about: documentEntity(platform, document),
+          }),
+          breadcrumbs([
+            { name: platform.name, path: `/${platform.slug}` },
+            { name: document.title, path: `/${platform.slug}/${document.slug}` },
+            { name: previous ? `Change of ${described.day}` : `First copy, ${described.day}`, path },
+          ]),
+        ]}
+      />
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/#platforms">All platforms</Link> / <Link href={`/${platform.slug}`}>{platform.name}</Link> /{" "}
+        <Link href="/#platforms">All platforms</Link>
+        <span aria-hidden="true"> / </span>
+        <Link href={`/${platform.slug}`}>{platform.name}</Link>
+        <span aria-hidden="true"> / </span>
         <Link href={`/${platform.slug}/${document.slug}`}>{document.title}</Link>
       </nav>
-      <p className="eyebrow">
-        {platform.name} · {document.title}
-      </p>
+      {/* The document's name is part of the heading, so each redline's heading is its own. */}
       <h1>
-        {version.datedOn
-          ? `${previous ? "Changed" : "First copy,"} dated ${formatDay(`${version.datedOn}T00:00:00Z`)}`
-          : previous
-            ? `Changed ${formatDay(version.capturedAt)}`
-            : `First copy, ${formatDay(version.capturedAt)}`}
+        <span className="h1-kicker">
+          {platform.name} {document.title}
+        </span>{" "}
+        {described.heading}
       </h1>
 
       {!next && (
@@ -107,7 +157,7 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
       )}
 
       <dl className="facts">
-        <dt>Recorded</dt>
+        <dt>Recorded on</dt>
         <dd>{formatDayTime(version.capturedAt)}</dd>
         {version.datedOn && (
           <>
@@ -120,21 +170,21 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
             <dt>Compared with</dt>
             <dd>
               <Link href={`/${platform.slug}/${document.slug}/${previous.id}`}>
-                The version captured {formatDay(previous.capturedAt)}
+                The version recorded {formatDay(previous.capturedAt)}
               </Link>
             </dd>
-            <dt>Extent</dt>
+            <dt>How much changed</dt>
             <dd>{describeStats(version.stats)}</dd>
           </>
         )}
-        <dt>Captured</dt>
+        <dt>How it was captured</dt>
         <dd>{CAPTURED[version.method]}</dd>
         <dt>Source</dt>
         <dd>
           {version.sourceUrl ? (
-            <a href={version.sourceUrl} rel="noopener noreferrer nofollow">
+            <ExternalLink href={version.sourceUrl} rel="nofollow">
               {version.sourceUrl.replace(/^https:\/\//, "")}
-            </a>
+            </ExternalLink>
           ) : (
             "Not published on a public page"
           )}
@@ -178,7 +228,7 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
         )}
       </section>
 
-      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} />
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={`/${platform.slug}/${document.slug}/${id}`} />
       <p className="note" style={{ marginTop: "1.5rem" }}>
         Spotted a mistake in this record, or have a newer copy of these terms?{" "}
         <Link href="/submit">Share it privately</Link>

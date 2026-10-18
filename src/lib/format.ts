@@ -16,6 +16,9 @@ export const formatDay = (iso: string) => day.format(new Date(iso));
 /** "Oct 17, 2026, 9:04 AM UTC" */
 export const formatDayTime = (iso: string) => `${dayTime.format(new Date(iso))} UTC`;
 
+/** "Headway’s", "TherapyNotes’" */
+export const possessive = (name: string) => (/s$/i.test(name) ? `${name}’` : `${name}’s`);
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** "2 paragraphs edited, 1 added" */

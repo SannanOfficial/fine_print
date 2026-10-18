@@ -12,6 +12,7 @@ import {
   type SubmissionStatus,
   type VersionRecord,
 } from "@/core/records.ts";
+import { SummaryError } from "@/core/summarize.ts";
 import { summarizeVersion } from "@/crawler/summary.ts";
 import { adminForAction, checkCredentials, endSession, SESSION_EXPIRED, startSession } from "@/lib/auth.ts";
 import { getDb } from "@/lib/db.ts";
@@ -42,6 +43,15 @@ const isId = (id: string) => /^[a-f0-9]{24}$/.test(id);
 
 /* ---------- Signing in and out ---------- */
 
+/**
+ * Checking a password is slow on purpose (scrypt), and runs on the same
+ * small thread pool the server uses for everything else. A burst of sign-in
+ * attempts must not tie it up, so only a few checks run at once and the rest
+ * are turned away.
+ */
+let checking = 0;
+const MAX_CHECKING = 3;
+
 export async function login(_previous: FormState, form: FormData): Promise<FormState> {
   const email = field(form, "email").trim().toLowerCase().slice(0, 254);
   const password = field(form, "password").slice(0, 256);
@@ -49,19 +59,29 @@ export async function login(_previous: FormState, form: FormData): Promise<FormS
 
   const values = { email };
   const ip = await clientIp();
-  // Only failed attempts count, so signing in often is fine. The per-address
-  // limit is looser than the per-address-and-IP one, so a stranger who knows
-  // an editor's email can't easily lock them out.
+  const pair = `${email}|${ip}`;
+  // Only failed attempts count, so signing in often is fine. The limit per
+  // admin address applies only where that address has already failed, so a
+  // stranger who knows an editor's email can't lock them out everywhere.
   const blocked =
     (await limitReached("login-ip", ip, 20, 900)) ||
-    (await limitReached("login-email-ip", `${email}|${ip}`, 5, 900)) ||
-    (await limitReached("login-email", email, 30, 900));
+    (await limitReached("login-email-ip", pair, 5, 900)) ||
+    ((await limitReached("login-email-ip", pair, 1, 900)) && (await limitReached("login-email", email, 30, 900)));
   if (blocked) return { ok: false, message: "Too many failed attempts. Wait 15 minutes and try again.", values, key: Date.now() };
 
-  const admin = await checkCredentials(email, password);
+  if (checking >= MAX_CHECKING) {
+    return { ok: false, message: "Too many sign-in attempts at once. Wait a few seconds and try again.", values, key: Date.now() };
+  }
+  checking++;
+  let admin: Awaited<ReturnType<typeof checkCredentials>>;
+  try {
+    admin = await checkCredentials(email, password);
+  } finally {
+    checking--;
+  }
   if (!admin) {
     await withinLimit("login-ip", ip, 20, 900);
-    await withinLimit("login-email-ip", `${email}|${ip}`, 5, 900);
+    await withinLimit("login-email-ip", pair, 5, 900);
     await withinLimit("login-email", email, 30, 900);
     return { ok: false, message: "That email and password don’t match an admin account.", values, key: Date.now() };
   }
@@ -99,6 +119,7 @@ export async function updateSubmission(id: string, _previous: FormState, form: F
     },
   );
   if (result.matchedCount === 0) return reply(false, "This submission no longer exists.");
+  refresh(); // the status shown above the form, and on the desk
   return reply(true, "Saved.");
 }
 
@@ -202,6 +223,8 @@ export async function redraftSummary(id: string, _previous: FormState, form: For
     if (result !== "written") return { ok: false, message: "There is nothing to summarise for this change." };
   } catch (error) {
     console.error(`Summary for ${id} failed: ${(error as Error).message}`);
+    // Some failures need an editor, not another try (a draft that named an address, changes too long to send).
+    if (error instanceof SummaryError && /by hand/.test(error.message)) return { ok: false, message: error.message };
     return { ok: false, message: "The AI draft failed. Try again in a minute." };
   }
   updateTag("summaries");

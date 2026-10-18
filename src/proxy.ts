@@ -24,6 +24,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Addresses are lower case. One typed or shared with capitals (/Headway) goes to the real page.
+  if (/[A-Z]/.test(path)) {
+    const lower = request.nextUrl.clone();
+    lower.pathname = path.toLowerCase();
+    return NextResponse.redirect(lower, 308);
+  }
+
   let segments: string[];
   try {
     segments = request.nextUrl.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -48,5 +55,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except static files, Next.js internals and the fixed top-level pages.
-  matcher: ["/((?!_next/|about$|submit$|newsletter(?:/|$)|robots\\.txt$|sitemap\\.xml$|favicon\\.ico$).+)"],
+  matcher: [
+    "/((?!_next/|about$|submit(?:/|$)|newsletter(?:/|$)|robots\\.txt$|sitemap\\.xml$|favicon\\.ico$|icon\\.png$|apple-icon\\.png$|opengraph-image\\.png$|feed\\.xml$|manifest\\.webmanifest$).+)",
+  ],
 };

@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { listChanges, listSubmissions, STATUS_LABELS, type ChangeRow, type SubmissionRow } from "@/lib/admin-data.ts";
+import { listChanges, listPlatformsWithFacts, listSubmissions, STATUS_LABELS, type ChangeRow, type SubmissionRow } from "@/lib/admin-data.ts";
 import { requireAdmin } from "@/lib/auth.ts";
 import { formatDay } from "@/lib/format.ts";
 import { AdminBar } from "./AdminBar.tsx";
+import { AdminStatus } from "./platforms/AdminStatus.tsx";
 
 const SUMMARY_LABELS = {
   missing: "No summary",
   automatic: "AI draft, not reviewed",
   reviewed: "Reviewed",
   hidden: "Hidden",
+  "not-needed": "Only formatting changed",
 } as const;
 
 function SubmissionRows({ rows }: { rows: SubmissionRow[] }) {
@@ -51,7 +53,9 @@ function ChangeRows({ rows }: { rows: ChangeRow[] }) {
             <Link href={`/admin/changes/${c.id}`} prefetch={false}>
               {c.title}
             </Link>
-            <span className={`method${c.summaryState === "reviewed" ? "" : " is-new"}`}>{SUMMARY_LABELS[c.summaryState]}</span>
+            <span className={`method${c.summaryState === "automatic" || c.summaryState === "missing" ? " is-new" : ""}`}>
+              {SUMMARY_LABELS[c.summaryState]}
+            </span>
           </div>
           {c.headline && <p className="docket-summary">{c.headline}</p>}
         </li>
@@ -70,8 +74,15 @@ export default function AdminHome({ searchParams }: PageProps<"/admin">) {
 
 async function Dashboard({ deleted }: { deleted: Promise<boolean> }) {
   const admin = await requireAdmin();
-  const [submissions, changes] = await Promise.all([listSubmissions(), listChanges()]);
-  const isOpen = (s: (typeof submissions)[number]) => s.status === "new" || s.status === "contacted";
+  const [submissions, changes, platforms] = await Promise.all([listSubmissions(), listChanges(), listPlatformsWithFacts()]);
+  // Automatic checks failing more than once in a row, and documents still waiting for a first copy by hand.
+  const attention = platforms.flatMap((p) =>
+    p.rows
+      .filter((r) => (r.mode === "auto" ? (r.status?.consecutiveFailures ?? 0) >= 2 : r.versions === 0))
+      .map((r) => ({ platform: p, row: r })),
+  );
+  // Confirmed submissions still need adding to the record, so they stay in the open list.
+  const isOpen = (s: (typeof submissions)[number]) => s.status === "new" || s.status === "contacted" || s.status === "confirmed";
   const openSubs = submissions.filter(isOpen);
   const doneSubs = submissions.filter((s) => !isOpen(s));
   const needsReview = (c: (typeof changes)[number]) => c.summaryState === "automatic" || c.summaryState === "missing";
@@ -113,6 +124,26 @@ async function Dashboard({ deleted }: { deleted: Promise<boolean> }) {
         )}
       </section>
 
+      {attention.length > 0 && (
+        <section className="section" aria-labelledby="attention-title">
+          <div className="section-head">
+            <h2 id="attention-title">Documents needing attention</h2>
+            <span className="label">{attention.length}</span>
+          </div>
+          <ul className="index-docs admin-docs">
+            {attention.map(({ platform, row }) => (
+              <li key={`${platform.slug}/${row.slug}`}>
+                <Link href={`/admin/platforms/${platform.slug}/${row.slug}`}>
+                  {platform.name}: {row.title}
+                </Link>
+                <span className="leader" aria-hidden="true" />
+                {row.mode === "manual" ? <span className="status status-warn">No copy yet · capture it by hand</span> : <AdminStatus row={row} />}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="section" aria-labelledby="changes-title">
         <div className="section-head">
           <h2 id="changes-title">Change summaries</h2>
@@ -127,7 +158,7 @@ async function Dashboard({ deleted }: { deleted: Promise<boolean> }) {
         )}
         {doneChanges.length > 0 && (
           <details className="done-list">
-            <summary>Reviewed or hidden ({doneChanges.length})</summary>
+            <summary>Reviewed, hidden or nothing to summarise ({doneChanges.length})</summary>
             <ChangeRows rows={doneChanges} />
           </details>
         )}

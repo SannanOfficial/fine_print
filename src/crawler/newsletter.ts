@@ -22,8 +22,31 @@ const WEEK_MS = 7 * 86_400_000;
  * now from landing behind a cursor that has already moved past it.
  */
 const SETTLE_MS = 2 * 60_000;
-/** Refused outright (SMTP 5xx) this many weeks in a row: the address is deleted. */
+/** The receiving server refused the address outright this many weeks in a row: it is deleted. */
 const MAX_BOUNCES = 3;
+/** Refusals closer together than this count once, so re-running the job doesn't add up "weeks". */
+const BOUNCE_GAP_MS = 6 * 86_400_000;
+
+type MailError = { code?: string; command?: string; responseCode?: number };
+
+/** The recipient's server refused this address itself (a permanent "no such user" and the like). */
+export function recipientRefused(error: unknown): boolean {
+  const e = error as MailError;
+  return e.code === "EENVELOPE" && e.command === "RCPT TO" && (e.responseCode ?? 0) >= 500;
+}
+
+/**
+ * A problem on our side: the SMTP login, the connection, or the sender
+ * address. Every send would fail the same way, so the run stops and no
+ * subscriber is blamed for it.
+ */
+export function ourProblem(error: unknown): boolean {
+  const e = error as MailError;
+  return (
+    ["EAUTH", "ECONNECTION", "ETIMEDOUT", "ESOCKET", "EDNS", "ETLS", "EPROTOCOL"].includes(e.code ?? "") ||
+    (e.code === "EENVELOPE" && e.command === "MAIL FROM")
+  );
+}
 
 const noWordingChanged = (s: ChangeStats | null) => s !== null && s.added + s.removed + s.changed === 0;
 
@@ -83,6 +106,8 @@ export interface DigestResult {
   sent: number;
   nothingNew: number;
   failed: number;
+  /** Set when the run stopped early because of a problem on our side. */
+  stopped?: string;
 }
 
 export async function runDigest(
@@ -155,21 +180,29 @@ export async function runDigest(
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
       });
-      await c.subscribers.updateOne({ _id: s._id }, { $max: { digestCursor: until }, $set: { lastSentAt: new Date(), bounces: 0 } });
+      await c.subscribers.updateOne(
+        { _id: s._id },
+        { $max: { digestCursor: until }, $set: { lastSentAt: new Date(), bounces: 0 }, $unset: { lastBounceAt: "" } },
+      );
       result.sent++;
       log(`sent to ${maskEmail(email)}: ${count} changes`);
     } catch (error) {
       result.failed++;
-      const code = (error as { responseCode?: number }).responseCode;
+      if (ourProblem(error)) {
+        result.stopped = (error as Error).message;
+        log(`stopped: ${(error as Error).message}. This is a problem with the mail settings, not the subscribers; nobody was marked as bouncing. Fix it and run again.`);
+        break;
+      }
       const who = email.includes("@") ? maskEmail(email) : email;
-      if (!dryRun && code !== undefined && code >= 500) {
+      const recent = s.lastBounceAt && now.getTime() - s.lastBounceAt.getTime() < BOUNCE_GAP_MS;
+      if (!dryRun && recipientRefused(error) && !recent) {
         const bounces = (s.bounces ?? 0) + 1;
         if (bounces >= MAX_BOUNCES) {
           await c.subscribers.deleteOne({ _id: s._id });
-          log(`refused for ${who} ${bounces} weeks running (${code}); address deleted`);
+          log(`refused for ${who} ${bounces} weeks running (${(error as MailError).responseCode}); address deleted`);
           continue;
         }
-        await c.subscribers.updateOne({ _id: s._id }, { $set: { bounces } });
+        await c.subscribers.updateOne({ _id: s._id }, { $set: { bounces, lastBounceAt: now } });
       }
       log(`failed for ${who}: ${(error as Error).message} (will retry next run)`);
     }

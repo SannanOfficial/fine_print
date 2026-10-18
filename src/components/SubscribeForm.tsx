@@ -22,8 +22,9 @@ function remember(email: string) {
   }
 }
 
-export function SubscribeForm({ platformSlug, platformName }: { platformSlug: string; platformName: string }) {
-  const [state, action, pending] = useActionState(subscribe.bind(null, platformSlug), null);
+/** `page` is the address of the page the form is on, so a browser without JavaScript gets its answer there. */
+export function SubscribeForm({ platformSlug, platformName, page }: { platformSlug: string; platformName: string; page: string }) {
+  const [state, action, pending] = useActionState(subscribe.bind(null, platformSlug), null, page);
   const [email, setEmail] = useState("");
   const id = useId();
 
@@ -58,7 +59,8 @@ export function SubscribeForm({ platformSlug, platformName }: { platformSlug: st
           placeholder="you@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          aria-describedby={`${id}-hint`}
+          aria-describedby={state ? `${id}-hint ${id}-message` : `${id}-hint`}
+          aria-invalid={state && !state.ok ? true : undefined}
         />
         <button type="submit" className="button button-primary" disabled={pending}>
           {pending ? "Sending…" : "Subscribe"}
@@ -71,7 +73,7 @@ export function SubscribeForm({ platformSlug, platformName }: { platformSlug: st
         </label>
       </div>
       {state && (
-        <p className={state.ok ? "form-ok" : "form-error"} role={state.ok ? "status" : "alert"}>
+        <p id={`${id}-message`} className={state.ok ? "form-ok" : "form-error"} role={state.ok ? "status" : "alert"}>
           {state.message}
         </p>
       )}

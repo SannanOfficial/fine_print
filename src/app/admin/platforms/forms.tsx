@@ -246,6 +246,9 @@ export function RecordForm({
   const stale = editedAfter !== null && editedAfter === state?.key;
   // The server doesn't know the editor's time zone, so the limit is set in the browser.
   const today = useSyncExternalStore(noSubscribe, localToday, () => undefined);
+  // Which button was pressed, so only that one says it's working.
+  const [intent, setIntent] = useState("");
+  const label = (name: string, idle: string, busy: string) => (pending && intent === name ? busy : idle);
 
   return (
     <form action={action} className="form" key={state?.key}>
@@ -264,16 +267,16 @@ export function RecordForm({
         <legend>1. Get the text</legend>
         {hasUrl && (
           <div className="form-actions">
-            <button type="submit" name="intent" value="fetch" className="button" disabled={pending} formNoValidate>
-              Fetch from the public page
+            <button type="submit" name="intent" value="fetch" className="button" disabled={pending} formNoValidate onClick={() => setIntent("fetch")}>
+              {label("fetch", "Fetch from the public page", "Fetching… (up to 30 seconds)")}
             </button>
           </div>
         )}
         <Field id="page" label={hasUrl ? "Or take it from a saved page" : "Take it from a saved page"} hint="In your browser: Save page as… → “Webpage, HTML only”.">
           <input id="page" name="page" type="file" accept=".html,.htm,text/html" aria-describedby="page-hint" />
         </Field>
-        <button type="submit" name="intent" value="extract" className="button" disabled={pending} formNoValidate>
-          Take text from saved page
+        <button type="submit" name="intent" value="extract" className="button" disabled={pending} formNoValidate onClick={() => setIntent("extract")}>
+          {label("extract", "Take text from saved page", "Reading the page…")}
         </button>
       </fieldset>
 
@@ -323,11 +326,18 @@ export function RecordForm({
       )}
 
       <div className="form-actions">
-        <button type="submit" name="intent" value="preview" className="button" disabled={pending}>
-          3. Preview the changes
+        <button type="submit" name="intent" value="preview" className="button" disabled={pending} onClick={() => setIntent("preview")}>
+          {label("preview", "3. Preview the changes", "Comparing…")}
         </button>
-        <button type="submit" name="intent" value="record" className="button button-primary" disabled={pending || !preview || stale}>
-          {pending ? "Working…" : "4. Record this version"}
+        <button
+          type="submit"
+          name="intent"
+          value="record"
+          className="button button-primary"
+          disabled={pending || !preview || stale}
+          onClick={() => setIntent("record")}
+        >
+          {label("record", "4. Record this version", "Recording…")}
         </button>
       </div>
       {(!preview || stale) && (

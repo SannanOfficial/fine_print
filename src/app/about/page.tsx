@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMetadata } from "@/lib/meta.ts";
+import { breadcrumbs, JsonLd, webPage } from "@/lib/structured-data.tsx";
 
-export const metadata: Metadata = {
-  title: "How it works",
-  description: "How Fine Print captures platform terms, how often it checks, and what its limits are.",
-};
+const title = "How Fine Print tracks platform terms";
+const description =
+  "How Fine Print captures the terms healthcare platforms publish, how often it checks, how changes and AI summaries work, and what the record can't show.";
+
+export const metadata: Metadata = pageMetadata({ title, description, path: "/about" });
 
 export default function About() {
   return (
     <article className="prose">
+      <JsonLd data={[webPage({ path: "/about", type: "AboutPage", name: title, description }), breadcrumbs([{ name: "How it works", path: "/about" }])]} />
       <nav className="crumbs" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
       </nav>
@@ -40,15 +44,17 @@ export default function About() {
       <h2>Documents captured by hand</h2>
       <p>
         Some platforms block automated checks or only show their terms after JavaScript runs in a browser. For those,
-        a maintainer opens the page in a normal browser, saves it, and imports it. These versions are marked
-        &ldquo;Captured by hand&rdquo; and are checked less often.
+        an editor opens the page in a normal browser, saves it, and imports it. These versions are marked
+        &ldquo;Captured by hand&rdquo;. They are updated only when an editor captures a fresh copy, so they can lag
+        behind the live page. If you notice a change first, <Link href="/submit">tell us</Link>.
       </p>
 
       <h2>Summaries</h2>
       <p>
-        Each recorded change gets a short summary in plain English, written by an OpenAI GPT model (currently GPT-5.4 mini; the
-        record of each change notes which model wrote its draft) from the changed paragraphs only. Until an editor has checked
-        it, a summary is labelled as an unreviewed AI draft. Editors can correct or withdraw any summary. The redline
+        Each recorded change gets a short summary in plain English, written by an OpenAI GPT model from the changed
+        paragraphs only. Until an editor has checked it, a summary is labelled as an unreviewed AI draft. A draft that
+        names a web or email address is never published, since the platform&rsquo;s own text may have steered it; an
+        editor writes those. Editors can correct or withdraw any summary. The redline
         is always the exact record; a summary can leave things out.
       </p>
 

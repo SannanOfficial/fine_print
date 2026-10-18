@@ -9,11 +9,15 @@ export class RobotsCache {
   private readonly cache = new Map<string, Promise<(url: string) => Verdict>>();
 
   check(url: string, allowedHosts: Set<string>): Promise<Verdict> {
-    const origin = new URL(url).origin;
-    let rules = this.cache.get(origin);
+    const { origin, hostname } = new URL(url);
+    // robots.txt often redirects between example.com and www.example.com, so both are allowed for it.
+    const hosts = new Set([...allowedHosts, hostname, hostname.startsWith("www.") ? hostname.slice(4) : `www.${hostname}`]);
+    // Keyed on the hosts too: documents on one site can allow different redirects.
+    const key = `${origin} ${[...hosts].sort().join(",")}`;
+    let rules = this.cache.get(key);
     if (!rules) {
-      rules = this.load(origin, allowedHosts);
-      this.cache.set(origin, rules);
+      rules = this.load(origin, hosts);
+      this.cache.set(key, rules);
     }
     return rules.then((isAllowed) => isAllowed(url));
   }

@@ -267,4 +267,6 @@ export interface SubscriberRecord {
   tokenVersion: number;
   /** Weekly sends in a row that the receiving server refused outright; the address is dropped after a few. */
   bounces?: number;
+  /** When the last refusal was counted, so re-running the job in one week counts once. */
+  lastBounceAt?: Date;
 }

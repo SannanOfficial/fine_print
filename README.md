@@ -17,7 +17,7 @@ scripts/admin.ts        Creates and manages admin accounts.
 scripts/newsletter.ts   Sends the weekly email of changes to subscribers.
 src/app/                The website (Next.js 16): the public record, the private
                         submission form (/submit) and the admin pages (/admin).
-deploy/                 systemd timers: the crawler (twice a day) and the weekly newsletter.
+deploy/                 systemd units: the website, and timers for the crawler (twice a day) and the weekly newsletter.
 ```
 
 There are two processes with separate database users:
@@ -122,7 +122,9 @@ The same works from the command line: `npm run capture -- simplepractice/terms-o
 
 ## Change summaries
 
-Each change gets an AI draft, shown publicly with the label "not yet checked by an editor". Admins review them at `/admin`: edit the headline and points, then **Publish as reviewed**, or **Hide summary**. A reviewed or hidden summary is never overwritten by the crawler. To ask for a fresh draft:
+Each change gets an AI draft, shown publicly with the label "not yet checked by an editor". Admins review them at `/admin`: edit the headline and points, then **Publish as reviewed**, or **Hide summary**. A reviewed or hidden summary is never overwritten by the crawler.
+
+The text sent to the model comes from the platform being tracked, which could hide instructions in its page to play a change down. So a draft that names a web or email address (which the instructions forbid) is never published; the change waits on the desk for an editor to summarise by hand. To ask for a fresh draft:
 
 ```bash
 npm run summarize -- --id <version id> --force
@@ -145,6 +147,7 @@ Anyone can subscribe on a platform's page (or any of its documents' pages) to a 
 - **Confirmed first.** A sign-up only sends a confirmation email. Nothing else is sent until its owner clicks the link and presses **Confirm** (a plain visit changes nothing, so link scanners can't confirm). Unconfirmed sign-ups delete themselves after 7 days. The reply is the same whether or not an address is already subscribed, and sign-ups are limited per address and per IP.
 - **Private.** Addresses are encrypted with `FINEPRINT_DATA_KEY`, and found by a keyed hash. Links in emails are signed with the same key, so they can't be guessed or altered.
 - **Weekly.** `npm run newsletter` emails each subscriber the changes recorded since their last email on the platforms they follow: the date, how much changed, the AI summary (labelled, and left out if an editor hid it), and a link to the redline. **Anyone with no changes gets nothing.** Each subscriber's place only moves on once their email is sent, so a failed send is retried next week and running it twice sends nothing twice. `--dry-run` shows who would get what.
+- **Bounces.** An address the receiving server refuses outright three weeks running is deleted. A problem on our side (a wrong SMTP password, the provider refusing the sender address, no connection) stops the run instead, and no subscriber is counted as bouncing.
 - **Easy to leave.** Every email links to a page to change platforms or unsubscribe (which deletes the address), and carries one-click unsubscribe headers for mail apps.
 
 Email goes out over SMTP, so any provider works (Postmark, Resend, Amazon SES, Mailgun…). Set `MAIL_FROM` and `SMTP_URL` for both the website (confirmation emails) and the newsletter job. For local testing, set `MAIL_OUTBOX_DIR` instead of `SMTP_URL`: emails are written to that folder as `.eml` files and nothing is sent. To schedule it, install `deploy/fineprint-newsletter.timer` (Mondays, 14:00 UTC) like the crawler's.
@@ -170,16 +173,31 @@ Short names (the `simplepractice` in `/simplepractice/terms-of-service`) can't b
 
 ## Deploying
 
-- Run `next build`, then `next start` behind a reverse proxy (Caddy or nginx) that terminates TLS and rate-limits requests.
+- Run `npm run build`, then the website with `deploy/fineprint-web.service` (or `npm start`), behind a reverse proxy (Caddy or nginx) on the same server that terminates TLS and rate-limits requests. Both listen on `127.0.0.1:3000` only, so nobody can reach the site without going through the proxy.
 - The site caches database reads in memory for up to 10 minutes (the `record` profile in `next.config.ts`), so a busy link barely touches MongoDB.
 - Give the web process `MONGODB_SITE_URI`, `FINEPRINT_DATA_KEY`, `FINEPRINT_SITE_URL` (links in emails; with `SMTP_URL` set, no email is sent without it), `MAIL_FROM`, `SMTP_URL`, and `OPENAI_API_KEY` if versions recorded at `/admin` should get AI summaries. Give the crawler service `MONGODB_WRITE_URI` and `OPENAI_API_KEY` (in `/etc/fineprint/crawler.env`). Give the newsletter service `MONGODB_WRITE_URI`, `FINEPRINT_DATA_KEY`, `MAIL_FROM`, `SMTP_URL` and `FINEPRINT_SITE_URL` (in `/etc/fineprint/newsletter.env`).
 - Set `FINEPRINT_CONTACT_EMAIL` to an address a person reads. It appears in the footer, on submission receipts and in the crawler's User-Agent, and is the reply address of every email the site sends.
 - Set up SPF, DKIM and DMARC for the sending domain with your email provider, or the weekly emails will land in spam.
 - The systemd units forbid writing anywhere (`ProtectSystem=strict`). If you ever point the newsletter service at `MAIL_OUTBOX_DIR`, add `ReadWritePaths=` for that folder.
-- The reverse proxy must **overwrite** the client address headers, so visitors can't fake their IP address to get around rate limits. With nginx: `proxy_set_header X-Real-IP $remote_addr;` and `proxy_set_header X-Forwarded-For $remote_addr;`. Caddy sets these correctly by default.
+- Rate limits use the visitor's IP address as the proxy reports it: the **last** `X-Forwarded-For` entry, the one the proxy itself adds. Caddy's `reverse_proxy` does this by default; with nginx use `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (or `$remote_addr`). Other headers such as `X-Real-IP` are ignored, since a proxy may pass a visitor's made-up value straight through. Behind a CDN such as Cloudflare, set `FINEPRINT_CLIENT_IP_HEADER=cf-connecting-ip` and let only the CDN's addresses reach your proxy. IPv6 visitors are limited per /64 block.
 - Submissions can be up to 9 MB, so allow that body size in the proxy (`client_max_body_size 10m;` in nginx).
 - If you ever run more than one instance of the website, set the same `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` on all of them.
 - Bind MongoDB to localhost or a private network. Never expose it publicly.
+
+## Search engines
+
+- **Every page** has its own title, description, canonical address, link-preview tags (Open Graph and Twitter, with `src/app/opengraph-image.png`) and structured data (schema.org JSON-LD: the site and its publisher on the home page, breadcrumbs everywhere, and which platform's document a page is about).
+- **Complete pages for everyone.** `htmlLimitedBots: /.*/` in `next.config.ts` puts every page's metadata in `<head>` and sends the finished page in the first response, so crawlers that don't run JavaScript, link previews and SEO tools see the same page as Google.
+- **`/sitemap.xml`** lists every public page and every redline, dated by its last change. **`/robots.txt`** points to it and keeps `/admin` and the newsletter's personal links out; those pages, receipts and 404s also say `noindex`.
+- **`/feed.xml`** is an Atom feed of the latest 50 changes, linked from every page, for feed readers and for search engines to find new redlines quickly.
+- Addresses typed with capitals (`/Headway`) or a trailing slash redirect to the real page; unknown addresses answer with a real 404.
+
+After going live:
+
+1. Build and run with the same `FINEPRINT_SITE_URL` (`https://fineprint.syedsannan.com`, the default). Some pages are built ahead, so the build needs it too.
+2. In [Google Search Console](https://search.google.com/search-console), add the site. A **Domain** property for `syedsannan.com` (verified with a DNS record) covers this subdomain and any others; or add a URL-prefix property for `https://fineprint.syedsannan.com` and set `FINEPRINT_GOOGLE_SITE_VERIFICATION` to the code it gives you, then rebuild.
+3. Submit `https://fineprint.syedsannan.com/sitemap.xml` there, and in [Bing Webmaster Tools](https://www.bing.com/webmasters) (which can import from Search Console, or use `FINEPRINT_BING_SITE_VERIFICATION`). Bing's index also feeds DuckDuckGo and others.
+4. Link to the site from `syedsannan.com`. A link from your main site is the quickest way for search engines to find and trust a new subdomain.
 
 ## Tests
 

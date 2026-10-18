@@ -105,7 +105,7 @@ async function Submission({ id }: { id: string }) {
           <dt>Prefers</dt>
           <dd>{d.contact.prefers === "phone" ? "Phone" : "Email"}</dd>
         </dl>
-        {s.status === "new" && <MarkContacted id={s.id} />}
+        <MarkContacted id={s.id} isNew={s.status === "new"} />
       </section>
 
       <section className="section" aria-labelledby="text-title">
@@ -136,13 +136,19 @@ async function Submission({ id }: { id: string }) {
         <div className="section-head">
           <h2 id="review-title">Review</h2>
         </div>
-        <SubmissionEditor id={s.id} status={s.status} notes={s.notes} />
+        <SubmissionEditor id={s.id} status={s.status} notes={s.notes} version={s.updatedAt.getTime()} />
       </section>
 
       <section className="section" aria-labelledby="publish-title">
         <div className="section-head">
           <h2 id="publish-title">Add to the record</h2>
         </div>
+        {s.status !== "confirmed" && s.status !== "published" && (
+          <p className="form-warn">
+            Not confirmed with the sender yet. The submission form promises we confirm the details with them before
+            anything is published, so set the status to &ldquo;Confirmed&rdquo; first.
+          </p>
+        )}
         <p className="note">
           Once you have confirmed it with the sender, record it as a version of a tracked document. The text they
           pasted is filled in for you to check. Their name and contact details are never published.

@@ -1,24 +1,42 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { CheckTimeline, ClauseDrift, ClauseSpecimen, EmailVersusChanges, HowItWorks, TwoSources } from "@/components/Infographics.tsx";
 import { Docket, StatusLine } from "@/components/Record.tsx";
 import { documentKey, findDocument, type Platform } from "@/core/platforms.ts";
-import { contactEmail, PATREON_URL } from "@/core/site.ts";
+import { contactEmail, PATREON_URL, SITE_DESCRIPTION } from "@/core/site.ts";
 import { getDocumentFacts, getRecentChanges, getStatuses, type DocumentFacts, type PublicStatus } from "@/lib/data.ts";
+import { FEED } from "@/lib/meta.ts";
 import { getPlatforms } from "@/lib/registry.ts";
+import { JsonLd, siteEntities, webPage } from "@/lib/structured-data.tsx";
+
+export const metadata: Metadata = { alternates: { canonical: "/", types: FEED } };
 
 export default function Home() {
   return (
     <>
+      <JsonLd
+        data={[
+          ...siteEntities(),
+          webPage({ path: "/", name: "Fine Print: a public record of healthcare platforms’ terms", description: SITE_DESCRIPTION }),
+        ]}
+      />
       <section className="hero">
+        <p className="eyebrow">The public record of healthcare platforms&rsquo; terms of service</p>
         <h1>The fine print keeps moving.</h1>
         <p className="lede">
           EHRs, billing and credentialing services, telehealth networks and directories keep rewriting the terms
           clinicians practice under. Some revisions are routine. Others test how much you will accept: rights to your
           name and voice, shorter notice, new limits on leaving. Fine Print logs every version, word for word, so
-          that no change goes unseen and the pattern is plain to everyone.
+          that changes don&rsquo;t slip by unnoticed and the pattern is plain to everyone.
         </p>
+        <nav className="hero-links" aria-label="Start here">
+          <a href="#platforms">Find your platform</a>
+          <a href="#changes">See recent changes</a>
+          <Link href="/submit">Share an agreement</Link>
+        </nav>
         <ClauseSpecimen />
       </section>
 
@@ -27,9 +45,7 @@ export default function Home() {
         <div className="prose">
           <p>
             In October 2026,{" "}
-            <a href="https://lnkd.in/p/d2dgEpHY" rel="noopener noreferrer">
-              clinicians began sharing
-            </a>{" "}
+            <ExternalLink href="https://lnkd.in/p/d2dgEpHY">clinicians began sharing</ExternalLink>{" "}
             summaries of a revised provider agreement from Headway. As
             described, it asked for a perpetual, irrevocable license to providers&rsquo; names, likenesses, photos,
             videos and voice recordings, including the right to alter them, create derivative works from them and
@@ -81,7 +97,8 @@ export default function Home() {
         <TwoSources />
         <div className="prose">
           <p>
-            Software checks every public page twice a day. Clinicians fill in the rest. When a platform shows
+            Software checks every public page it can read twice a day; the few sites that block it are captured
+            by hand. Clinicians fill in the rest. When a platform shows
             you new terms, send them in. An editor confirms each submission with the person who sent it before it
             joins the record, and senders are never named.
           </p>
@@ -126,7 +143,7 @@ export default function Home() {
         </Suspense>
       </section>
 
-      <section className="section" aria-labelledby="changes-title">
+      <section className="section" id="changes" aria-labelledby="changes-title">
         <h2 id="changes-title">Recent changes</h2>
         <Suspense fallback={<p className="empty">Loading the record…</p>}>
           <RecentChanges />
@@ -177,9 +194,9 @@ export default function Home() {
               is useful to you, a small monthly contribution keeps it running and independent. The record stays free
               for everyone either way.
             </p>
-            <a href={PATREON_URL} className="button" rel="noopener noreferrer">
+            <ExternalLink href={PATREON_URL} className="button">
               Support on Patreon
-            </a>
+            </ExternalLink>
           </div>
         </div>
         <p className="support-contact">

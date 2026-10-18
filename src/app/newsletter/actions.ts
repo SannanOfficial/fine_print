@@ -1,6 +1,7 @@
 "use server";
 
 import { ObjectId } from "mongodb";
+import { redirect } from "next/navigation";
 import { confirmEmail } from "@/core/newsletter-email.ts";
 import { confirmToken, manageToken, readToken } from "@/core/newsletter-links.ts";
 import { mailConfigured, sendMail, siteUrl as configuredSiteUrl } from "@/core/mailer.ts";
@@ -34,7 +35,7 @@ export async function subscribe(platformSlug: string, _previous: SubscribeState,
   const raw = form.get("email");
   const email = (typeof raw === "string" ? raw : "").trim().toLowerCase();
   const reply = (ok: boolean, message: string): SubscribeState => ({ ok, message, key: Date.now(), email });
-  const sent = reply(true, `Almost done: we sent a confirmation link to ${email}. Nothing is sent until you click it.`);
+  const sent = reply(true, `Almost done: we sent a link to ${email}. Open it and press “Confirm”. Nothing is sent until you do.`);
 
   // Bots fill in every field, including this one, which people never see.
   if (form.get("website")) return sent;
@@ -50,7 +51,7 @@ export async function subscribe(platformSlug: string, _previous: SubscribeState,
     (await withinLimit("newsletter-email-day", email, 8, 86_400)) &&
     // An overall cap, so many addresses from many places can't burn the sending domain's reputation.
     (await withinLimit("newsletter-all", "all", 500, 86_400));
-  if (!allowed) return reply(false, "Too many sign-ups from here. Please try again in an hour.");
+  if (!allowed) return reply(false, "Too many sign-ups right now. Please try again in an hour.");
 
   const col = await subscribers();
   const hash = emailHash(email);
@@ -137,7 +138,7 @@ export async function savePreferences(token: string, _previous: LinkState, form:
   const col = await subscribers();
   if (chosen.length === 0) {
     await col.deleteOne({ _id: subscriber._id });
-    return { ok: true, message: "You're unsubscribed from everything, and your address has been deleted." };
+    redirect("/newsletter/manage?left=1");
   }
   await col.updateOne({ _id: subscriber._id }, { $set: { platforms: chosen, expiresAt: null, updatedAt: new Date() } });
   return { ok: true, message: `Saved. You follow ${chosen.length} ${chosen.length === 1 ? "platform" : "platforms"}.` };
@@ -146,5 +147,5 @@ export async function savePreferences(token: string, _previous: LinkState, form:
 export async function unsubscribeAll(token: string): Promise<LinkState> {
   const subscriber = await subscriberFor(token);
   if (subscriber) await (await subscribers()).deleteOne({ _id: subscriber._id });
-  return { ok: true, message: "You're unsubscribed from everything, and your address has been deleted." };
+  redirect("/newsletter/manage?left=1");
 }

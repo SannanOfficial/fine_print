@@ -2,6 +2,8 @@
 
 import { randomInt, randomUUID } from "node:crypto";
 import { ObjectId } from "mongodb";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { mailConfigured, sendMail, siteUrl } from "@/core/mailer.ts";
 import { receiptEmail } from "@/core/newsletter-email.ts";
@@ -76,7 +78,7 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
   const fail = (message: string): SubmitState => ({ status: "error", message, errors, values, key: randomUUID() });
 
   // Bots fill in every field, including this one, which people never see.
-  if (text(form, "website")) return { status: "sent", reference: newReference(), email: values.email, phone: "", prefers: "email" };
+  if (text(form, "website")) return { status: "sent", reference: newReference(), email: values.email, phone: "", prefers: "email", emailed: false };
 
   // ----- What was shown -----
   if (values.platform !== "other" && !(await getPlatform(values.platform))) errors.platform = "Choose the platform.";
@@ -158,6 +160,7 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
   };
 
   const fileStore = db.collection<SubmissionFileRecord>(COLLECTIONS.submissionFiles);
+  let sent: SubmitState;
   try {
     if (files.length > 0) {
       await fileStore.insertMany(
@@ -192,8 +195,10 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
         reference = newReference();
       }
     }
-    if (mailConfigured()) {
-      // A receipt, so the sender has the reference and knows we can reach them. Sent after the reply.
+    // A receipt, so the sender has the reference and knows we can reach them. Sent after the reply.
+    // At most three a day to one address, so the form can't be used to flood someone's inbox.
+    const emailed = mailConfigured() && (await withinLimit("submit-receipt", values.email.toLowerCase(), 3, 86_400));
+    if (emailed) {
       const to = values.email;
       const ref = reference;
       after(async () => {
@@ -204,11 +209,15 @@ export async function submitAgreement(_previous: SubmitState, form: FormData): P
         }
       });
     }
-    return { status: "sent", reference, email: values.email, phone: values.phone, prefers: values.prefers };
+    sent = { status: "sent", reference, email: values.email, phone: values.phone, prefers: values.prefers, emailed };
   } catch (error) {
     console.error("Saving a submission failed:", (error as Error).message);
     // Don't leave files behind without the submission they belong to.
     await fileStore.deleteMany({ submissionId: id }).catch(() => {});
     return fail("We could not save your submission just now. Nothing was stored. Please try again in a few minutes.");
   }
+  // A browser without JavaScript posts the form itself (no Next-Action header), and this
+  // page can't show it the receipt, so it goes to one. Only the reference is in the address.
+  if (!(await headers()).has("next-action")) redirect(`/submit/received?ref=${sent.reference}`);
+  return sent;
 }

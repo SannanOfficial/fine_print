@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ObjectId } from "mongodb";
 import { connection } from "next/server";
+import Link from "next/link";
 import { Suspense } from "react";
 import { readToken } from "@/core/newsletter-links.ts";
 import { COLLECTIONS, type SubscriberRecord } from "@/core/records.ts";
@@ -15,9 +16,19 @@ export default function ManagePage({ searchParams }: PageProps<"/newsletter/mana
   return (
     <article className="narrow">
       <Suspense fallback={<p className="empty">Loading…</p>}>
-        {searchParams.then((q) => (
-          <Manage token={typeof q.t === "string" ? q.t : ""} />
-        ))}
+        {searchParams.then((q) =>
+          q.left === "1" ? (
+            <>
+              <h1>You&rsquo;re unsubscribed</h1>
+              <p className="lede" style={{ marginTop: "1rem" }}>
+                No more emails will be sent, and your address has been deleted from Fine Print. To sign up again, use
+                the form on any <Link href="/#platforms">platform&rsquo;s page</Link>.
+              </p>
+            </>
+          ) : (
+            <Manage token={typeof q.t === "string" ? q.t : ""} />
+          ),
+        )}
       </Suspense>
     </article>
   );

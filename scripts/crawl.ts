@@ -78,6 +78,7 @@ if (!(await acquireLock(c, holder, 60 * 60_000))) {
 }
 
 let unexpected = false;
+let dbDown = false;
 const tally = new Map<string, string[]>();
 const databaseDown = (error: unknown) => error instanceof MongoNetworkError || error instanceof MongoServerSelectionError;
 try {
@@ -132,6 +133,7 @@ try {
           sourceUrl: first.finalUrl,
           method: "auto",
           at,
+          expectedPreviousId: previous?._id ?? null,
         });
       } catch (error) {
         if (!(error instanceof ConcurrentVersionError)) throw error;
@@ -146,6 +148,7 @@ try {
       if (databaseDown(error)) {
         // Nothing can be recorded, so stop rather than keep loading other sites for nothing.
         console.error(`${name}: the database can't be reached (${(error as Error).message}). Stopping this run.`);
+        dbDown = true;
         break;
       }
       console.error(`${name}: unexpected error`, error);
@@ -155,7 +158,7 @@ try {
   }
 
   // Summaries that failed earlier (an OpenAI outage, say) are retried here, a few per run.
-  if (process.env.OPENAI_API_KEY) await fillMissingSummaries();
+  if (process.env.OPENAI_API_KEY && !dbDown) await fillMissingSummaries().catch((error) => console.error(`Could not retry missing summaries: ${(error as Error).message}`));
 } finally {
   await releaseLock(c, holder).catch((error) => console.error(`Could not release the lock: ${(error as Error).message}`));
   await client.close();
@@ -174,8 +177,10 @@ process.exit(unexpected || allFailed ? 1 : 0);
 
 async function fillMissingSummaries() {
   const recent = await c.versions
-    .find({ previousId: { $ne: null } }, { projection: { _id: 1, platform: 1, document: 1 }, sort: { capturedAt: -1 }, limit: 50 })
-    .toArray();
+    .find({ previousId: { $ne: null } }, { projection: { _id: 1, platform: 1, document: 1, stats: 1 }, sort: { capturedAt: -1 }, limit: 50 })
+    .toArray()
+    // Changes to links or formatting only have no wording to summarise.
+    .then((rows) => rows.filter((v) => !v.stats || v.stats.added + v.stats.removed + v.stats.changed > 0));
   if (recent.length === 0) return;
   const done = new Set((await c.summaries.find({ _id: { $in: recent.map((v) => v._id) } }, { projection: { _id: 1 } }).toArray()).map((s) => s._id.toHexString()));
   const missing = recent.filter((v) => !done.has(v._id.toHexString())).slice(0, 5);

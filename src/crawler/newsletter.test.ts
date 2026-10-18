@@ -80,3 +80,22 @@ test("maskEmail", () => {
   assert.equal(maskEmail("someone@example.org"), "s******@example.org");
   assert.equal(maskEmail("a@b.co"), "a*@b.co");
 });
+
+test("only a refused recipient counts as a bounce; our own mail problems stop the run", async () => {
+  const { ourProblem, recipientRefused } = await import("./newsletter.ts");
+  const err = (code: string, command: string, responseCode?: number) => Object.assign(new Error("x"), { code, command, responseCode });
+  // Wrong SMTP password: everyone would "bounce". It must stop the run instead.
+  assert.equal(recipientRefused(err("EAUTH", "AUTH PLAIN", 535)), false);
+  assert.equal(ourProblem(err("EAUTH", "AUTH PLAIN", 535)), true);
+  // The provider refuses our sender address.
+  assert.equal(recipientRefused(err("EENVELOPE", "MAIL FROM", 550)), false);
+  assert.equal(ourProblem(err("EENVELOPE", "MAIL FROM", 550)), true);
+  assert.equal(ourProblem(err("ECONNECTION", "CONN")), true);
+  // The receiving server refuses this one address.
+  assert.equal(recipientRefused(err("EENVELOPE", "RCPT TO", 550)), true);
+  assert.equal(ourProblem(err("EENVELOPE", "RCPT TO", 550)), false);
+  // A temporary refusal isn't a bounce.
+  assert.equal(recipientRefused(err("EENVELOPE", "RCPT TO", 450)), false);
+  // The message was rejected after the address was accepted: not the address's fault.
+  assert.equal(recipientRefused(err("EMESSAGE", "DATA", 554)), false);
+});

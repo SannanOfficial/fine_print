@@ -76,7 +76,8 @@ try {
       : "No job is running.",
   );
 
-  const struggling = rows.filter((r) => r.fails >= 3);
+  // Documents captured by hand aren't the crawler's job, so its failures there aren't an alarm.
+  const struggling = rows.filter((r) => r.mode === "auto" && r.fails >= 3);
   if (struggling.length) {
     console.log(`\nNeeds attention: ${struggling.map((r) => r.document).join(", ")} (3 or more failed checks in a row).`);
     process.exitCode = 2;

@@ -100,7 +100,8 @@ const describe = (id: string, error?: string, hint = false) => ({
 });
 
 export function SubmitForm({ platforms, contact }: { platforms: { slug: string; name: string }[]; contact: string | null }) {
-  const [state, action, pending] = useActionState<SubmitState, FormData>(submitAgreement, { status: "idle" });
+  // The permalink lets a browser without JavaScript get its result (the receipt) back on this page.
+  const [state, action, pending] = useActionState<SubmitState, FormData>(submitAgreement, { status: "idle" }, "/submit");
   const today = useSyncExternalStore(noSubscribe, localToday, () => undefined);
   const top = useRef<HTMLDivElement>(null);
 
@@ -134,6 +135,12 @@ export function SubmitForm({ platforms, contact }: { platforms: { slug: string; 
           )}{" "}
           to confirm the details before anything is published, usually within a week. Nothing you sent is public.
         </p>
+        {state.emailed && (
+          <p>
+            We have also emailed this reference to <strong>{state.email}</strong>. If it hasn&rsquo;t arrived in a few
+            minutes, check your spam folder.
+          </p>
+        )}
         <p>
           To withdraw or add to your submission,{" "}
           {contact ? (
@@ -218,7 +225,7 @@ export function SubmitForm({ platforms, contact }: { platforms: { slug: string; 
         <Field
           id="text"
           label="The text"
-          hint="Paste the agreement or email here, or attach files below. Include the whole thing if you can."
+          hint="Paste the agreement or email here. Required unless you attach files below. Include the whole thing if you can."
           error={e.text}
         >
           <textarea {...describe("text", e.text, true)} defaultValue={v.text} rows={10} maxLength={LIMITS.text} />

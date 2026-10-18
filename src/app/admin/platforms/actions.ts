@@ -1,5 +1,6 @@
 "use server";
 
+import { timingSafeEqual } from "node:crypto";
 import { ObjectId } from "mongodb";
 import { revalidateTag, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
@@ -11,6 +12,7 @@ import {
   isHttpsUrl,
   MANUAL_REASONS,
   platformProblems,
+  SLUG,
   type Audience,
   type TrackedDocument,
 } from "@/core/platforms.ts";
@@ -29,6 +31,7 @@ import { sha256 } from "@/core/hash.ts";
 import { normalizeMarkdown } from "@/core/text.ts";
 import { fetchDocument } from "@/crawler/check.ts";
 import { ExtractionError, extractDocument } from "@/crawler/extract.ts";
+import { decodeBody } from "@/crawler/fetch.ts";
 import { sameWording } from "@/crawler/check.ts";
 import { ConcurrentVersionError, latestVersion, recordCheck, saveVersion } from "@/crawler/record.ts";
 import { RobotsCache } from "@/crawler/robots.ts";
@@ -36,6 +39,7 @@ import { summarizeVersion } from "@/crawler/summary.ts";
 import { adminForAction, SESSION_EXPIRED } from "@/lib/auth.ts";
 import { getDb } from "@/lib/db.ts";
 import { forgetKnownPaths } from "@/lib/known-paths.ts";
+import { keyedHash } from "@/lib/seal.ts";
 import { toPlatform } from "@/lib/registry.ts";
 
 /*
@@ -48,6 +52,8 @@ const field = (form: FormData, name: string) => {
   const value = form.get(name);
   return typeof value === "string" ? value.trim() : "";
 };
+/** Bound arguments arrive from the client too, so check they're plain short names before they reach a query. */
+const isSlug = (value: unknown): value is string => typeof value === "string" && value.length <= 60 && SLUG.test(value);
 const lines = (value: string) =>
   value
     .split(/\r?\n/)
@@ -128,9 +134,10 @@ export async function addPlatform(_previous: PlatformState, form: FormData): Pro
 }
 
 export async function updatePlatform(slug: string, _previous: PlatformState, form: FormData): Promise<PlatformState> {
-  const values = platformValues(form, slug);
+  const values = platformValues(form, isSlug(slug) ? slug : "");
   const admin = await adminForAction();
   if (!admin) return { ok: false, message: SESSION_EXPIRED, values, key: Date.now() };
+  if (!isSlug(slug)) return { ok: false, message: "This platform no longer exists.", values, key: Date.now() };
   const problems = platformProblems(values);
   if (problems.length) return { ok: false, message: problems.join(" "), values, key: Date.now() };
 
@@ -147,12 +154,14 @@ export type SimpleState = { ok: boolean; message: string } | null;
 
 export async function deletePlatform(slug: string, _previous: SimpleState, form: FormData): Promise<SimpleState> {
   if (!(await adminForAction())) return { ok: false, message: SESSION_EXPIRED };
+  if (!isSlug(slug)) return { ok: false, message: "This platform no longer exists." };
   if (field(form, "confirm") !== slug) return { ok: false, message: `Type “${slug}” to confirm.` };
   const c = await collections();
   if (await c.versions.findOne({ platform: slug }, { projection: { _id: 1 } })) {
     return { ok: false, message: "This platform has versions on the record, so it can't be deleted." };
   }
   await c.platforms.deleteOne({ _id: slug });
+  // Short names are letters, digits and hyphens only, so the slug is safe inside the pattern.
   await forgetStatus(c, { _id: { $regex: `^${slug}/` } });
   // Nobody can follow a platform that's gone; addresses left following nothing are deleted.
   await c.subscribers.updateMany({ platforms: slug }, { $pull: { platforms: slug } });
@@ -220,6 +229,7 @@ export async function addDocument(platformSlug: string, _previous: DocumentState
   const fail = (message: string): DocumentState => ({ ok: false, message, values, key: Date.now() });
   const admin = await adminForAction();
   if (!admin) return fail(SESSION_EXPIRED);
+  if (!isSlug(platformSlug)) return fail("This platform no longer exists.");
   const doc = toDocument(values);
   const problems = documentProblems(doc);
   if (problems.length) return fail(problems.join(" "));
@@ -244,9 +254,10 @@ export async function updateDocument(
   _previous: DocumentState,
   form: FormData,
 ): Promise<DocumentState> {
-  const values = documentValues(form, documentSlug);
+  const values = documentValues(form, isSlug(documentSlug) ? documentSlug : "");
   const admin = await adminForAction();
   if (!admin) return { ok: false, message: SESSION_EXPIRED, values, key: Date.now() };
+  if (!isSlug(platformSlug) || !isSlug(documentSlug)) return { ok: false, message: "This document no longer exists.", values, key: Date.now() };
   const doc = toDocument(values);
   const problems = documentProblems(doc);
   if (problems.length) return { ok: false, message: problems.join(" "), values, key: Date.now() };
@@ -268,6 +279,7 @@ export async function deleteDocument(
 ): Promise<SimpleState> {
   const admin = await adminForAction();
   if (!admin) return { ok: false, message: SESSION_EXPIRED };
+  if (!isSlug(platformSlug) || !isSlug(documentSlug)) return { ok: false, message: "This document no longer exists." };
   if (field(form, "confirm") !== documentSlug) return { ok: false, message: `Type “${documentSlug}” to confirm.` };
   const c = await collections();
   if (await c.versions.findOne({ platform: platformSlug, document: documentSlug }, { projection: { _id: 1 } })) {
@@ -284,9 +296,28 @@ export async function deleteDocument(
 
 /* ---------- Recording a version ---------- */
 
+/*
+ * Text fetched from the public page is recorded as an automatic capture. The
+ * form carries a proof of that, signed by the server, because a hidden field
+ * the browser could fill in itself must not decide what the record says
+ * about where text came from. Proofs last 12 hours.
+ */
+const FETCH_PROOF_MS = 12 * 60 * 60 * 1000;
+function fetchProof(platform: string, document: string, content: string, at: number): string {
+  return `${at}.${keyedHash(`fetched:${platform}/${document}:${at}:${sha256(content)}`)}`;
+}
+function isFetchProof(proof: string, platform: string, document: string, content: string): boolean {
+  const [at, mac = ""] = proof.split(".");
+  const when = Number(at);
+  if (!Number.isSafeInteger(when) || when > Date.now() + 60_000 || Date.now() - when > FETCH_PROOF_MS) return false;
+  const expected = fetchProof(platform, document, content, when).split(".")[1];
+  return mac.length === expected.length && timingSafeEqual(Buffer.from(mac), Buffer.from(expected));
+}
+
 export type RecordValues = {
   text: string;
   sourceUrl: string;
+  /** The server's signed proof that `text` was fetched from the public page (see fetchProof), or "". */
   fetchedHash: string;
   submissionId: string;
   datedOn: string;
@@ -338,6 +369,7 @@ export async function recordVersion(
   });
   const admin = await adminForAction();
   if (!admin) return reply(false, SESSION_EXPIRED);
+  if (!isSlug(platformSlug) || !isSlug(documentSlug)) return reply(false, "This document no longer exists.");
 
   const c = await collections();
   const row = await c.platforms.findOne({ _id: platformSlug });
@@ -350,7 +382,7 @@ export async function recordVersion(
     const result = await fetchDocument(doc, new RobotsCache());
     if (!result.ok) return reply(false, `Could not read the page: ${result.detail}`);
     values.text = result.content;
-    values.fetchedHash = sha256(result.content);
+    values.fetchedHash = fetchProof(platformSlug, documentSlug, result.content, Date.now());
     values.sourceUrl = doc.url;
     return reply(true, `Read ${result.content.length.toLocaleString("en-US")} characters from the page. Check the text, then preview the changes.`);
   }
@@ -359,12 +391,11 @@ export async function recordVersion(
     const file = form.get("page");
     if (!(file instanceof File) || file.size === 0) return reply(false, "Choose a saved page (.html) first.");
     if (file.size > MAX_PAGE_BYTES) return reply(false, "That file is over 5 MB. Save the page as “Webpage, HTML only”.");
-    let html: string;
-    try {
-      html = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
-    } catch {
-      return reply(false, "That file isn't a saved web page (it isn't readable text).");
-    }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // Images, PDFs and other binary files have zero bytes early on; web pages never do.
+    if (bytes.subarray(0, 4096).includes(0)) return reply(false, "That file isn't a saved web page (it isn't readable text).");
+    // Saved pages keep their original encoding, which isn't always UTF-8.
+    const html = decodeBody(bytes, "");
     try {
       values.text = extractDocument(html, doc).content;
     } catch (error) {
@@ -393,7 +424,9 @@ export async function recordVersion(
   }
 
   // Text straight from the public page counts as an automatic capture, whoever pressed the button.
-  const method = values.fetchedHash === sha256(content) ? "auto" : values.submissionId ? "submission" : "manual";
+  const fromPage = Boolean(values.fetchedHash) && isFetchProof(values.fetchedHash, platformSlug, documentSlug, content);
+  const method = fromPage ? "auto" : values.submissionId ? "submission" : "manual";
+  if (fromPage && doc.url) values.sourceUrl = doc.url;
   const basedOn = previous?._id.toHexString() ?? "none";
 
   const preview = (message: string) => {
@@ -439,10 +472,12 @@ export async function recordVersion(
       recordedBy: admin.email,
       datedOn: values.datedOn || null,
       touchUnchanged: false,
+      expectedPreviousId: previous?._id ?? null,
     });
   } catch (error) {
     if (error instanceof ConcurrentVersionError) {
-      return reply(false, "Another version of this document was recorded at the same moment. Reload the page and check.");
+      values.basedOn = "";
+      return reply(false, "Another version of this document was recorded a moment ago. Preview again to see the changes against it.");
     }
     throw error;
   }

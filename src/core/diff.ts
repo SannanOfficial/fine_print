@@ -26,14 +26,29 @@ function similarity(parts: WordPart[], a: string, b: string): number {
 const sameWord = (a: string, b: string) => foldTypography(a) === foldTypography(b);
 const sameBlock = (a: string, b: string) => compareKey(a) === compareKey(b);
 
-function wordDiff(before: string, after: string): WordPart[] {
+/**
+ * Word-level differences, or null when they can't be worked out before
+ * `deadline` (a timestamp): very long, very different paragraphs.
+ */
+function wordDiff(before: string, after: string, deadline: number): WordPart[] | null {
+  const timeout = deadline - Date.now();
+  if (timeout <= 0) return null;
   // The word differ honours `comparator` (diff 9 base.js) but its options type omits it.
-  return diffWordsWithSpace(before, after, { comparator: sameWord } as Parameters<typeof diffWordsWithSpace>[2]).map((c) => ({
-    value: c.value,
-    added: Boolean(c.added),
-    removed: Boolean(c.removed),
-  }));
+  const changes = diffWordsWithSpace(before, after, { comparator: sameWord, timeout } as Parameters<typeof diffWordsWithSpace>[2]) as
+    | ReturnType<typeof diffWordsWithSpace>
+    | undefined;
+  return changes ? changes.map((c) => ({ value: c.value, added: Boolean(c.added), removed: Boolean(c.removed) })) : null;
 }
+
+/**
+ * Whether two paragraphs could reach MIN_SIMILARITY. Text in common can't be
+ * longer than the shorter one, so paragraphs of very different lengths can't,
+ * and aren't compared word by word at all.
+ */
+const couldMatch = (a: string, b: string) => Math.min(a.length, b.length) >= MIN_SIMILARITY * Math.max(a.length, b.length);
+
+/** Time allowed for word-level comparison in one redline. Past it, paragraphs show as removed and added. */
+const PAIRING_MS = 4_000;
 
 /**
  * Compare two documents paragraph by paragraph. A removed paragraph followed
@@ -43,6 +58,7 @@ function wordDiff(before: string, after: string): WordPart[] {
 export function diffDocuments(beforeMarkdown: string, afterMarkdown: string): DiffEntry[] {
   const changes = diffArrays(toBlocks(beforeMarkdown), toBlocks(afterMarkdown), { comparator: sameBlock });
   const entries: DiffEntry[] = [];
+  const deadline = Date.now() + PAIRING_MS;
 
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i];
@@ -56,7 +72,7 @@ export function diffDocuments(beforeMarkdown: string, afterMarkdown: string): Di
     const added = change.added ? change.value : next?.added ? next.value : [];
     if (change.removed && next?.added) i++;
 
-    for (const entry of pairBlocks(removed, added)) entries.push(entry);
+    for (const entry of pairBlocks(removed, added, deadline)) entries.push(entry);
   }
   return entries;
 }
@@ -70,15 +86,15 @@ const MAX_PAIRING = 400;
  * next to an insertion reads as one edit and one insertion, not two removals
  * and two additions. Unmatched paragraphs are plain removals and additions.
  */
-function pairBlocks(removed: string[], added: string[]): DiffEntry[] {
+function pairBlocks(removed: string[], added: string[], deadline: number): DiffEntry[] {
   const out: DiffEntry[] = [];
   if (removed.length * added.length > MAX_PAIRING) {
     for (let j = 0; j < Math.max(removed.length, added.length); j++) {
       const before = removed[j];
       const after = added[j];
-      if (before !== undefined && after !== undefined) {
-        const parts = wordDiff(before, after);
-        if (similarity(parts, before, after) >= MIN_SIMILARITY) {
+      if (before !== undefined && after !== undefined && couldMatch(before, after)) {
+        const parts = wordDiff(before, after, deadline);
+        if (parts && similarity(parts, before, after) >= MIN_SIMILARITY) {
           out.push({ kind: "changed", before, after, parts });
           continue;
         }
@@ -92,7 +108,9 @@ function pairBlocks(removed: string[], added: string[]): DiffEntry[] {
   const scored: { i: number; j: number; score: number; parts: WordPart[] }[] = [];
   removed.forEach((before, i) =>
     added.forEach((after, j) => {
-      const parts = wordDiff(before, after);
+      if (!couldMatch(before, after)) return;
+      const parts = wordDiff(before, after, deadline);
+      if (!parts) return;
       const score = similarity(parts, before, after);
       if (score >= MIN_SIMILARITY) scored.push({ i, j, score, parts });
     }),

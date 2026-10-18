@@ -67,7 +67,13 @@ export interface SubmissionRow {
 
 export async function listSubmissions(): Promise<SubmissionRow[]> {
   const platforms = await listPlatforms();
-  const rows = await (await cols()).submissions.find({}, { sort: { receivedAt: -1 }, limit: 300 }).toArray();
+  const c = await cols();
+  // Everything still waiting on someone, however old, plus the most recent of the rest.
+  const [open, done] = await Promise.all([
+    c.submissions.find({ status: { $in: ["new", "contacted", "confirmed"] } }, { sort: { receivedAt: -1 } }).toArray(),
+    c.submissions.find({ status: { $nin: ["new", "contacted", "confirmed"] } }, { sort: { receivedAt: -1 }, limit: 200 }).toArray(),
+  ]);
+  const rows = [...open, ...done].sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
   const now = Date.now();
   const waiting = (s: SubmissionRecord) => (s.status === "new" ? Math.floor((now - s.receivedAt.getTime()) / 86_400_000) : 0);
   return rows.map((s) => {
@@ -141,7 +147,8 @@ export interface ChangeRow {
   document: string;
   title: string;
   capturedAt: Date;
-  summaryState: ChangeSummaryRecord["state"] | "missing";
+  /** "not-needed": only links or formatting changed, so there is nothing to summarise. */
+  summaryState: ChangeSummaryRecord["state"] | "missing" | "not-needed";
   headline: string | null;
 }
 
@@ -151,7 +158,7 @@ export async function listChanges(): Promise<ChangeRow[]> {
   const versions = await c.versions
     .find(
       { previousId: { $ne: null } },
-      { projection: { platform: 1, document: 1, capturedAt: 1 }, sort: { capturedAt: -1 }, limit: 200 },
+      { projection: { platform: 1, document: 1, capturedAt: 1, stats: 1 }, sort: { capturedAt: -1 }, limit: 200 },
     )
     .toArray();
   const summaries = await c.summaries
@@ -167,7 +174,7 @@ export async function listChanges(): Promise<ChangeRow[]> {
       document: v.document,
       title: found ? `${found.platform.name}: ${found.document.title}` : `${v.platform}/${v.document}`,
       capturedAt: v.capturedAt,
-      summaryState: s?.state ?? "missing",
+      summaryState: s?.state ?? (v.stats && v.stats.added + v.stats.removed + v.stats.changed === 0 ? "not-needed" : "missing"),
       headline: s?.headline ?? null,
     };
   });

@@ -1,16 +1,26 @@
 import "server-only";
 import { headers } from "next/headers";
+import { addressBlock } from "@/core/address.ts";
 import { COLLECTIONS, type RateLimitRecord } from "@/core/records.ts";
 import { getDb } from "./db.ts";
 import { keyedHash } from "./seal.ts";
 
 /**
- * The visitor's IP address as reported by the reverse proxy. The proxy must
- * overwrite (not append to) X-Real-IP / X-Forwarded-For; see README.md.
+ * The visitor's IP address, as our own reverse proxy reports it.
+ *
+ * By default this is the last X-Forwarded-For entry: the one added by the
+ * proxy in front of the site. (Caddy replaces the header; nginx with
+ * $proxy_add_x_forwarded_for appends to it.) Earlier entries, and headers such
+ * as X-Real-IP that a proxy may pass through untouched, come from the visitor
+ * and can be made up. Behind a CDN, set FINEPRINT_CLIENT_IP_HEADER to the
+ * header it sets, for example cf-connecting-ip. See README.md, "Deploying".
  */
 export async function clientIp(): Promise<string> {
   const h = await headers();
-  return (h.get("x-real-ip") ?? h.get("x-forwarded-for")?.split(",")[0] ?? "unknown").trim();
+  const name = process.env.FINEPRINT_CLIENT_IP_HEADER?.trim().toLowerCase() || "x-forwarded-for";
+  const value = h.get(name) ?? "";
+  const ip = (name === "x-forwarded-for" ? value.split(",").at(-1) : value)?.trim();
+  return ip ? addressBlock(ip) : "unknown";
 }
 
 /**

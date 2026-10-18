@@ -40,6 +40,7 @@ if (!dryRun && !(await acquireLock(c, holder, 60 * 60_000, "newsletter"))) {
 try {
   const r = await runDigest(c, { dryRun, siteUrl });
   console.log(`${dryRun ? "Dry run: would send" : "Sent"} ${r.sent}, nothing new for ${r.nothingNew}, failed ${r.failed}.`);
+  if (r.stopped) console.error(`The run stopped early: ${r.stopped}`);
   process.exitCode = r.failed > 0 ? 1 : 0;
 } finally {
   if (!dryRun) await releaseLock(c, holder, "newsletter");

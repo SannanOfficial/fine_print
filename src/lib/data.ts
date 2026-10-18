@@ -185,6 +185,18 @@ export async function getNextVersion(platform: string, document: string, id: str
   return row ? { id: row._id.toHexString(), capturedAt: row.capturedAt.toISOString() } : null;
 }
 
+/** Every change on the record (address and date only), for the sitemap. */
+export async function getAllChanges(): Promise<{ id: string; platform: string; document: string; capturedAt: string }[]> {
+  "use cache";
+  cacheLife("record");
+  cacheTag("versions");
+
+  const rows = await (await versions())
+    .find({ previousId: { $ne: null } }, { projection: { platform: 1, document: 1, capturedAt: 1 }, sort: { capturedAt: -1, _id: -1 } })
+    .toArray();
+  return rows.map((v) => ({ id: v._id.toHexString(), platform: v.platform, document: v.document, capturedAt: v.capturedAt.toISOString() }));
+}
+
 /** Most recent changes across all platforms (first captures excluded). */
 export async function getRecentChanges(limit: number): Promise<VersionSummary[]> {
   "use cache";

@@ -38,6 +38,7 @@ const fmt = (d: Date) => day.format(d);
 const INK = "#1d1b16";
 const SOFT = "#5a564c";
 const RULE = "#dcd8cc";
+const LINK = "#17614a"; // the site's link green
 const FONT = "Georgia, 'Times New Roman', serif";
 
 function frame(title: string, body: string, footer: string): string {
@@ -63,7 +64,9 @@ export function confirmEmail(input: { platformName: string; confirmUrl: string; 
   const text = [
     `Someone, probably you, asked Fine Print to email this address when ${input.platformName} changes the terms it asks clinicians to accept.`,
     "",
-    `To confirm, open this link within 7 days:`,
+    "You'll get one email on Mondays, and only in weeks when something changed.",
+    "",
+    `To confirm, open this link within 7 days and press "Confirm subscription":`,
     input.confirmUrl,
     "",
     "If you didn't ask for this, ignore this email. Nothing more will be sent.",
@@ -75,8 +78,8 @@ export function confirmEmail(input: { platformName: string; confirmUrl: string; 
     `<p>Someone, probably you, asked Fine Print to email this address when <b>${escape(input.platformName)}</b> changes the terms it asks clinicians to accept.</p>
 <p>You&rsquo;ll get one email on Mondays, and only in weeks when something changed.</p>
 ${button(input.confirmUrl, "Confirm subscription")}
-<p style="font-size:15px;color:${SOFT};">The link works for 7 days. If you didn&rsquo;t ask for this, ignore this email. Nothing more will be sent.</p>`,
-    `<a href="${escape(input.siteUrl)}" style="color:${SOFT};">Fine Print</a> keeps a public, dated record of healthcare platforms&rsquo; terms.`,
+<p style="font-size:15px;color:${SOFT};">The button opens a page where you press &ldquo;Confirm subscription&rdquo; once more; that stops link scanners from signing you up. The link works for 7 days. If you didn&rsquo;t ask for this, ignore this email. Nothing more will be sent.</p>`,
+    `<a href="${escape(input.siteUrl)}" style="color:${LINK};">Fine Print</a> keeps a public, dated record of healthcare platforms&rsquo; terms.`,
   );
   return { subject, text, html };
 }
@@ -101,7 +104,7 @@ export function receiptEmail(input: { reference: string; siteUrl: string; contac
 <p style="font-size:22px;letter-spacing:0.08em;margin:20px 0;"><b>${escape(input.reference)}</b></p>
 <p>An editor will contact you to confirm it before anything is published, usually within a week. Your name and contact details are never published.</p>
 <p style="font-size:15px;color:${SOFT};">To withdraw or add to your submission, ${escape(write)} and quote the reference. If you didn&rsquo;t send this, do the same and we&rsquo;ll delete it.</p>`,
-    `<a href="${escape(input.siteUrl)}" style="color:${SOFT};">Fine Print</a> keeps a public, dated record of healthcare platforms&rsquo; terms.`,
+    `<a href="${escape(input.siteUrl)}" style="color:${LINK};">Fine Print</a> keeps a public, dated record of healthcare platforms&rsquo; terms.`,
   );
   return { subject, text, html };
 }
@@ -164,14 +167,19 @@ export function digestEmail(input: {
         `<p style="margin:0 0 10px;font-size:14px;color:${SOFT};">${escape(when)} · ${escape(extent)}</p>`,
       );
       if (c.summary) {
-        textParts.push(`${summaryLabel(c.summary)}:`, `  ${c.summary.headline}`, ...c.summary.points.map((p) => `  - ${p}`));
+        textParts.push(
+          `${summaryLabel(c.summary)}. It may leave things out; the redline is the exact record.`,
+          `  ${c.summary.headline}`,
+          ...c.summary.points.map((p) => `  - ${p}`),
+        );
+        // Who wrote the summary comes first, before it's read as fact.
         htmlParts.push(
           `<div style="margin:0 0 10px;padding:12px 16px;background:#ffffff;border:1px solid ${RULE};border-left:3px solid ${INK};">`,
+          `<p style="margin:0 0 6px;font-size:13px;font-style:italic;color:${SOFT};">${escape(summaryLabel(c.summary))}. It may leave things out; the redline is the exact record.</p>`,
           `<p style="margin:0 0 6px;font-weight:600;">${escape(c.summary.headline)}</p>`,
           c.summary.points.length
-            ? `<ul style="margin:0 0 8px;padding-left:20px;">${c.summary.points.map((p) => `<li style="margin:0 0 4px;">${escape(p)}</li>`).join("")}</ul>`
+            ? `<ul style="margin:0;padding-left:20px;">${c.summary.points.map((p) => `<li style="margin:0 0 4px;">${escape(p)}</li>`).join("")}</ul>`
             : "",
-          `<p style="margin:0;font-size:13px;font-style:italic;color:${SOFT};">${escape(summaryLabel(c.summary))}. It may leave things out; the redline is the exact record.</p>`,
           `</div>`,
         );
       } else {
@@ -179,7 +187,9 @@ export function digestEmail(input: {
         htmlParts.push(`<p style="margin:0 0 8px;font-size:15px;color:${SOFT};">No summary yet; the redline has the exact changes.</p>`);
       }
       textParts.push(`Redline: ${href(g, c)}`);
-      htmlParts.push(`<p style="margin:0 0 8px;"><a href="${escape(href(g, c))}" style="color:${INK};">See exactly what changed</a></p>`);
+      htmlParts.push(
+        `<p style="margin:0 0 8px;"><a href="${escape(href(g, c))}" style="color:${LINK};">See exactly what changed in the ${escape(c.documentTitle)}</a></p>`,
+      );
     }
   }
 
@@ -188,7 +198,7 @@ export function digestEmail(input: {
   const html = frame(
     subject,
     htmlParts.join("\n"),
-    `${escape(why)}<br><a href="${escape(input.manageUrl)}" style="color:${SOFT};">Change platforms or unsubscribe</a> · <a href="${escape(siteUrl)}" style="color:${SOFT};">Fine Print</a>`,
+    `${escape(why)}<br><a href="${escape(input.manageUrl)}" style="color:${LINK};">Change platforms or unsubscribe</a> · <a href="${escape(siteUrl)}" style="color:${LINK};">Fine Print</a>`,
   );
   return { subject, text: textParts.join("\n"), html };
 }

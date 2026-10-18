@@ -15,19 +15,21 @@ import { readFile, stat } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { findDocument } from "../src/core/platforms.ts";
 import { collections, connectWriter, acquireLock, loadPlatforms, releaseLock } from "../src/crawler/db.ts";
+import { looksTruncated, sameWording } from "../src/crawler/check.ts";
 import { ExtractionError, extractDocument } from "../src/crawler/extract.ts";
-import { recordCheck, saveVersion } from "../src/crawler/record.ts";
+import { decodeBody } from "../src/crawler/fetch.ts";
+import { latestVersion, recordCheck, saveVersion } from "../src/crawler/record.ts";
 import { trySummarize } from "../src/crawler/summary.ts";
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
-  options: { "dry-run": { type: "boolean", default: false }, url: { type: "string" } },
+  options: { "dry-run": { type: "boolean", default: false }, force: { type: "boolean", default: false }, url: { type: "string" } },
 });
 
 const [target, file] = positionals;
 const [platformSlug, documentSlug] = (target ?? "").split("/");
 if (!platformSlug || !documentSlug || !file) {
-  console.error("Usage: npm run capture -- <platform>/<document> <saved-page.html> [--url https://…] [--dry-run]");
+  console.error("Usage: npm run capture -- <platform>/<document> <saved-page.html> [--url https://…] [--dry-run] [--force]");
   process.exit(1);
 }
 
@@ -56,7 +58,8 @@ if ((await stat(file)).size > MAX_FILE_BYTES) {
 
 let content: string;
 try {
-  content = extractDocument(await readFile(file, "utf8"), found.document).content;
+  // Saved pages keep their original encoding, which isn't always UTF-8.
+  content = extractDocument(decodeBody(await readFile(file), ""), found.document).content;
 } catch (error) {
   if (error instanceof ExtractionError) {
     console.error(`Could not find the document text: ${error.message}`);
@@ -81,18 +84,31 @@ if (!(await acquireLock(c, holder, 5 * 60_000))) {
   process.exit(1);
 }
 try {
-  const at = new Date();
-  const { outcome, id } = await saveVersion(c, {
-    platform: found.platform.slug,
-    document: found.document.slug,
-    content,
-    sourceUrl,
-    method: "manual",
-    at,
-  });
-  await recordCheck(c, { platform: found.platform.slug, document: found.document.slug, outcome, detail: null, at, durationMs: 0 });
-  console.log(`\nSaved: ${outcome}.`);
-  if (outcome === "changed") await trySummarize(c, id, `${found.platform.slug}/${found.document.slug}`);
+  // The same checks as the crawler and the admin form.
+  const previous = await latestVersion(c, found.platform.slug, found.document.slug);
+  if (previous && previous.content !== content && sameWording(previous.content, content)) {
+    console.log("\nThe wording is the same as the latest version; only link addresses, typography or formatting differ. Nothing saved.");
+  } else if (looksTruncated(previous?.content, content) && !args.force) {
+    console.error(
+      `\nThe text is less than half the length of the latest version (${content.length} vs ${previous!.content.length} characters). ` +
+        "Check the saved page, or pass --force to save it anyway.",
+    );
+    process.exitCode = 1;
+  } else {
+    const at = new Date();
+    const { outcome, id } = await saveVersion(c, {
+      platform: found.platform.slug,
+      document: found.document.slug,
+      content,
+      sourceUrl,
+      method: "manual",
+      at,
+      expectedPreviousId: previous?._id ?? null,
+    });
+    await recordCheck(c, { platform: found.platform.slug, document: found.document.slug, outcome, detail: null, at, durationMs: 0 });
+    console.log(`\nSaved: ${outcome}.`);
+    if (outcome === "changed") await trySummarize(c, id, `${found.platform.slug}/${found.document.slug}`);
+  }
 } finally {
   await releaseLock(c, holder);
   await client.close();

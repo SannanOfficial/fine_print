@@ -14,7 +14,7 @@ function Message({ state }: { state: LinkState }) {
 }
 
 export function ConfirmForm({ token }: { token: string }) {
-  const [state, action, pending] = useActionState(confirmSubscription.bind(null, token), null);
+  const [state, action, pending] = useActionState(confirmSubscription.bind(null, token), null, `/newsletter/confirm?t=${encodeURIComponent(token)}`);
   if (state?.ok) {
     return (
       <>
@@ -51,11 +51,10 @@ export function PreferencesForm({
   platforms: { slug: string; name: string; kind: string }[];
   chosen: string[];
 }) {
-  const [state, action, pending] = useActionState(savePreferences.bind(null, token), null);
-  const [leftState, leave, leaving] = useActionState(unsubscribeAll.bind(null, token), null);
-  if (leftState?.ok || (state?.ok && /unsubscribed/.test(state.message))) {
-    return <Message state={leftState ?? state} />;
-  }
+  const page = `/newsletter/manage?t=${encodeURIComponent(token)}`; // so a browser without JavaScript gets its answer here
+  const [state, action, pending] = useActionState(savePreferences.bind(null, token), null, page);
+  // Unsubscribing goes to a page that says so (see manage/page.tsx); only a failure comes back here.
+  const [leftState, leave, leaving] = useActionState(unsubscribeAll.bind(null, token), null, page);
   if (platforms.length === 0) {
     return (
       <>
@@ -76,6 +75,7 @@ export function PreferencesForm({
       <form action={action} className="form">
         <fieldset>
           <legend>Platforms you get Monday emails about</legend>
+          <p className="hint">Untick every platform and save to unsubscribe and delete your address.</p>
           <div className="choices">
             {platforms.map((p) => (
               <label key={p.slug} className="check">
@@ -94,6 +94,7 @@ export function PreferencesForm({
       </form>
       <form action={leave} className="form">
         <p className="hint">Stops every email and deletes your address from Fine Print.</p>
+        <Message state={leftState} />
         <button type="submit" className="button button-danger" disabled={leaving}>
           {leaving ? "Unsubscribing…" : "Unsubscribe from everything"}
         </button>

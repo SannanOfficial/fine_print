@@ -65,7 +65,9 @@ export async function endSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token && TOKEN.test(token)) await (await db()).sessions.deleteOne({ _id: tokenHash(token) });
-  store.delete(SESSION_COOKIE);
+  // Cleared with the same attributes it was set with: browsers ignore a
+  // __Host- cookie sent without Secure, which is how delete() sends it.
+  store.set({ name: SESSION_COOKIE, value: "", httpOnly: true, secure: SECURE, sameSite: "strict", path: "/", maxAge: 0 });
 }
 
 /** The signed-in admin, or null. Looked up once per request. */

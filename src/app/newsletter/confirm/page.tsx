@@ -57,6 +57,7 @@ async function Confirm({ token }: { token: string }) {
       <p className="lede" style={{ marginTop: "1rem" }}>
         You&rsquo;ll get an email on Monday in any week that <Link href={`/${platform.slug}`}>{platform.name}</Link>{" "}
         changes the terms it asks clinicians to accept, with a summary of each change and a link to the exact redline.
+        Press the button below to start.
       </p>
       <ConfirmForm token={token} />
     </>

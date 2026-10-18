@@ -4,21 +4,33 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { DocumentText } from "@/components/DocumentText.tsx";
+import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { Docket } from "@/components/Record.tsx";
 import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { audienceLabel, documentKey, findDocument } from "@/core/platforms.ts";
 import { getDocumentFacts, getHistory, getLatestText, getStatuses } from "@/lib/data.ts";
-import { describeOutcome, formatDay, formatDayTime } from "@/lib/format.ts";
+import { describeOutcome, formatDay, formatDayTime, possessive } from "@/lib/format.ts";
+import { pageMetadata } from "@/lib/meta.ts";
 import { getDocument, getPlatforms } from "@/lib/registry.ts";
+import { breadcrumbs, documentEntity, JsonLd, webPage } from "@/lib/structured-data.tsx";
 
 export async function generateMetadata({ params }: PageProps<"/[platform]/[document]">): Promise<Metadata> {
   const { platform, document } = await params;
   const found = await getDocument(platform, document);
   if (!found) return {};
-  return {
+  const latest = (await getDocumentFacts())[documentKey(platform, document)]?.latest;
+  return pageMetadata({
     title: `${found.platform.name} ${found.document.title}`,
-    description: `The current text of ${found.platform.name}'s ${found.document.title} and every recorded change to it.`,
-  };
+    description: documentDescription(found.platform.name, found.document.title, latest),
+    path: `/${platform}/${document}`,
+  });
+}
+
+/** For search results: under 160 characters, with the date of the last change when it fits. */
+function documentDescription(platform: string, title: string, latest: { capturedAt: string; isFirst: boolean } | undefined) {
+  const base = `The current text of ${possessive(platform)} ${title} and every recorded change, each shown as a redline.`;
+  const when = latest ? ` ${latest.isFirst ? "First recorded" : "Last changed"} ${formatDay(latest.capturedAt)}.` : "";
+  return (base + when).length <= 160 ? base + when : base;
 }
 
 export default function DocumentPage({ params }: PageProps<"/[platform]/[document]">) {
@@ -43,35 +55,64 @@ async function DocumentView({ platformSlug, documentSlug }: { platformSlug: stri
   const found = findDocument(platforms, platformSlug, documentSlug);
   if (!found) notFound();
   const { platform, document } = found;
-  const status = statuses[documentKey(platform.slug, document.slug)];
+  // Documents captured by hand aren't checked by the crawler; its last attempt isn't shown.
+  const status = document.mode === "auto" ? statuses[documentKey(platform.slug, document.slug)] : undefined;
   const outcome = status ? describeOutcome(status.lastOutcome) : null;
+
+  const path = `/${platform.slug}/${document.slug}`;
+  const newest = facts[documentKey(platform.slug, document.slug)]?.latest;
 
   return (
     <>
+      <JsonLd
+        data={[
+          webPage({
+            path,
+            name: `${platform.name} ${document.title}`,
+            description: documentDescription(platform.name, document.title, newest),
+            dateModified: newest?.capturedAt,
+            about: documentEntity(platform, document),
+          }),
+          breadcrumbs([
+            { name: platform.name, path: `/${platform.slug}` },
+            { name: document.title, path },
+          ]),
+        ]}
+      />
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/#platforms">All platforms</Link> / <Link href={`/${platform.slug}`}>{platform.name}</Link>
+        <Link href="/#platforms">All platforms</Link>
+        <span aria-hidden="true"> / </span>
+        <Link href={`/${platform.slug}`}>{platform.name}</Link>
       </nav>
       <p className="eyebrow">
-        {platform.name} · {audienceLabel[document.audience]}
+        {platform.kind} · {audienceLabel[document.audience]}
       </p>
-      <h1>{document.title}</h1>
+      <h1>
+        {platform.name} {document.title}
+      </h1>
 
       <dl className="facts">
         <dt>Published at</dt>
         <dd>
           {document.url ? (
-            <a href={document.url} rel="noopener noreferrer nofollow">
+            <ExternalLink href={document.url} rel="nofollow">
               {document.url.replace(/^https:\/\//, "")}
-            </a>
+            </ExternalLink>
           ) : (
             "We are still confirming the public address of this document."
           )}
         </dd>
         <dt>How we capture it</dt>
         <dd>{document.mode === "auto" ? "Checked automatically twice a day." : document.manualReason}</dd>
-        <dt>Last checked</dt>
+        <dt>{document.mode === "auto" ? "Last checked" : "Last captured"}</dt>
         <dd>
-          {status ? (
+          {document.mode === "manual" ? (
+            latest ? (
+              `${formatDay(latest.capturedAt)}. Captured only when an editor saves a fresh copy, so it can lag behind the live page.`
+            ) : (
+              "Not yet"
+            )
+          ) : status ? (
             <>
               {formatDayTime(status.lastCheckedAt)}
               {outcome && !outcome.ok && (
@@ -94,14 +135,19 @@ async function DocumentView({ platformSlug, documentSlug }: { platformSlug: stri
         <dd>{facts[documentKey(platformSlug, documentSlug)]?.count ?? 0}</dd>
       </dl>
 
-      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} />
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={`/${platform.slug}/${document.slug}`} />
 
       <section className="section" aria-labelledby="history-title">
         <div className="section-head">
           <h2 id="history-title">History</h2>
         </div>
         {history.length === 0 ? (
-          <p className="empty">No copies of this document have been recorded yet.</p>
+          <p className="empty">
+            {document.mode === "manual"
+              ? "We haven’t captured this document yet. "
+              : "Nothing recorded yet. The first automatic check will save the current text. "}
+            If {platform.name} showed it to you, <Link href="/submit">share it privately</Link>.
+          </p>
         ) : (
           <Docket versions={history} showDocument={false} platforms={platforms} />
         )}

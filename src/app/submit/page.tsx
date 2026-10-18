@@ -3,18 +3,21 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { contactEmail } from "@/core/site.ts";
+import { pageMetadata } from "@/lib/meta.ts";
+import { breadcrumbs, JsonLd, webPage } from "@/lib/structured-data.tsx";
 import { getPlatforms } from "@/lib/registry.ts";
 import { SubmitForm } from "./SubmitForm.tsx";
 
-export const metadata: Metadata = {
-  title: "Share an agreement privately",
-  description:
-    "Send Fine Print terms or policy updates a platform showed you privately, by email, in its app or as a contract. Your details stay private.",
-};
+const title = "Share an agreement privately";
+const description =
+  "Send Fine Print the terms or policy updates a platform showed you by email, in its app or as a contract. Encrypted on arrival; your name is never published.";
+
+export const metadata: Metadata = pageMetadata({ title, description, path: "/submit" });
 
 export default function SubmitPage() {
   return (
     <article>
+      <JsonLd data={[webPage({ path: "/submit", name: title, description }), breadcrumbs([{ name: title, path: "/submit" }])]} />
       <nav className="crumbs" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
       </nav>

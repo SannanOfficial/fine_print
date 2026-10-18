@@ -40,10 +40,20 @@ export async function saveVersion(
     datedOn?: string | null;
     /** Update the latest version's "still published" date when nothing changed. The website can't, and skips it. */
     touchUnchanged?: boolean;
+    /**
+     * The latest version the caller checked the new text against (null: there
+     * was none). If another version was recorded since, nothing is saved and
+     * ConcurrentVersionError is thrown, so no text joins the record without
+     * those checks against its real predecessor.
+     */
+    expectedPreviousId?: ObjectId | null;
   },
 ): Promise<{ outcome: "first-capture" | "changed" | "unchanged"; id: ObjectId; at: Date }> {
   const hash = sha256(input.content);
   const previous = await latestVersion(c, input.platform, input.document);
+  if (input.expectedPreviousId !== undefined && (previous?._id.toHexString() ?? null) !== (input.expectedPreviousId?.toHexString() ?? null)) {
+    throw new ConcurrentVersionError("Another version of this document was recorded since this text was checked.");
+  }
 
   if (previous && previous.hash === hash) {
     if (input.touchUnchanged !== false) {

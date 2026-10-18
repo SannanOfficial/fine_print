@@ -1,12 +1,18 @@
 import type { Metadata, Viewport } from "next";
 import { Source_Serif_4 } from "next/font/google";
 import Link from "next/link";
+import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { headScript, ThemeToggle } from "@/components/ThemeToggle.tsx";
-import { contactEmail } from "@/core/site.ts";
+import { contactEmail, publicSiteUrl, SITE_DESCRIPTION } from "@/core/site.ts";
+import { FEED } from "@/lib/meta.ts";
 import "./reset.css";
 import "./globals.css";
 
-/** One typeface for everything, as in a printed document. */
+/**
+ * One typeface for everything, as in a printed document. The optical-size
+ * axis gives headings their fine display cut; it costs about 150 KB more
+ * than the weight axis alone.
+ */
 const serif = Source_Serif_4({
   variable: "--font-serif",
   subsets: ["latin"],
@@ -15,14 +21,31 @@ const serif = Source_Serif_4({
   display: "swap",
 });
 
-const siteUrl = process.env.FINEPRINT_SITE_URL ?? "https://fineprint.syedsannan.com";
+const homeTitle = "Fine Print: a public record of healthcare platforms’ terms";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  title: { default: "Fine Print", template: "%s · Fine Print" },
-  description:
-    "An independent, public log of every change to the terms that EHRs, billing and credentialing services, telehealth networks and directories ask clinicians to accept, kept automatically and by clinicians themselves.",
-  openGraph: { siteName: "Fine Print", type: "website" },
+  metadataBase: new URL(publicSiteUrl()),
+  title: { default: homeTitle, template: "%s · Fine Print" },
+  description: SITE_DESCRIPTION,
+  applicationName: "Fine Print",
+  authors: [{ name: "Syed Muhammad Sannan", url: "https://syedsannan.com" }],
+  creator: "Syed Muhammad Sannan",
+  publisher: "Fine Print",
+  category: "healthcare",
+  // Pages that must stay out of search results (admin, newsletter links, receipts) say so themselves.
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-snippet": -1, "max-image-preview": "large", "max-video-preview": -1 },
+  },
+  alternates: { types: FEED },
+  openGraph: { siteName: "Fine Print", type: "website", locale: "en_US", title: homeTitle, description: SITE_DESCRIPTION, url: "/" },
+  twitter: { card: "summary_large_image", title: homeTitle, description: SITE_DESCRIPTION },
+  // Search Console and Bing Webmaster Tools ownership checks, when set (at build time).
+  verification: {
+    ...(process.env.FINEPRINT_GOOGLE_SITE_VERIFICATION ? { google: process.env.FINEPRINT_GOOGLE_SITE_VERIFICATION } : {}),
+    ...(process.env.FINEPRINT_BING_SITE_VERIFICATION ? { other: { "msvalidate.01": process.env.FINEPRINT_BING_SITE_VERIFICATION } } : {}),
+  },
 };
 
 export const viewport: Viewport = {
@@ -63,7 +86,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </p>
           <p>
             Corrections and questions: <a href={`mailto:${contact}`}>{contact}</a>.{" "}
-            Powered by <a href="https://syedsannan.com">syedsannan.com</a>. All dates are in UTC.
+            Powered by <ExternalLink href="https://syedsannan.com">syedsannan.com</ExternalLink>. All dates are in UTC.
           </p>
         </footer>
       </body>

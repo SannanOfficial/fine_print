@@ -42,6 +42,12 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // Every visitor gets the page's title, description and link-preview tags in
+  // <head>, and the complete page in the first response, instead of having them
+  // streamed in afterwards. Search engines, link previews, SEO tools and
+  // crawlers that don't run JavaScript all see the same finished page. The
+  // record's data is cached, so this adds only milliseconds.
+  htmlLimitedBots: /.*/,
   cacheLife: {
     // How long the public site may serve a cached copy of the record.
     // The crawler runs twice a day, so a few minutes of delay is harmless.
