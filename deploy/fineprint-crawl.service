@@ -14,7 +14,8 @@
 [Unit]
 Description=Fine Print: check tracked terms for changes
 Wants=network-online.target
-After=network-online.target
+# The database lives on this server: start after it (but don't require it).
+After=network-online.target mongod.service
 
 [Service]
 Type=oneshot
