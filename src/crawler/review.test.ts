@@ -99,6 +99,15 @@ test("hidden text is left out of the record", () => {
   assert.ok(content.includes("Monthly fee"));
 });
 
+test("lists and paragraphs inside a table cell keep their words apart", () => {
+  const filler = "<p>" + "Terms text. ".repeat(60) + "</p>";
+  const cell = "<ul><li>Providing <b>services</b></li><li>Analytics <ul><li>Ads</li><li>Reports</li></ul></li><li>Security</li></ul>";
+  const html = `<main>${filler}<table><tr><th>Uses</th><td>${cell}</td><td><p>First.</p><p>Second</p></td></tr></table></main>`;
+  const content = extractDocument(html, { selectors: ["main"] }).content;
+  assert.ok(content.includes("Providing **services**; Analytics Ads; Reports; Security"), content);
+  assert.ok(content.includes("First. Second"), content);
+});
+
 test("sign-in never returns to the sign-in page itself", () => {
   assert.equal(afterLogin("/admin/login?next=%2Fadmin"), "/admin");
 });
