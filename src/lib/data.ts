@@ -6,6 +6,7 @@ import {
   type ChangeStats,
   type ChangeSummaryRecord,
   type CheckOutcome,
+  type EventRecord,
   type StatusRecord,
   type VersionRecord,
 } from "@/core/records.ts";
@@ -201,6 +202,29 @@ export async function getAllChanges(): Promise<{ id: string; platform: string; d
     .find({ previousId: { $ne: null } }, { projection: { platform: 1, document: 1, capturedAt: 1 }, sort: { capturedAt: -1, _id: -1 } })
     .toArray();
   return rows.map((v) => ({ id: v._id.toHexString(), platform: v.platform, document: v.document, capturedAt: v.capturedAt.toISOString() }));
+}
+
+/** An event in a company's record, as shown publicly (see EventRecord). */
+export interface PublicEvent {
+  id: string;
+  date: string;
+  precision: "day" | "month";
+  title: string;
+  body: string;
+  sources: { label: string; url: string }[];
+}
+
+/** A platform's events, newest first. */
+export async function getEvents(platform: string): Promise<PublicEvent[]> {
+  "use cache";
+  cacheLife("record");
+  cacheTag("events");
+
+  const rows = await (await getDb())
+    .collection<EventRecord>(COLLECTIONS.events)
+    .find({ platform }, { sort: { date: -1, _id: -1 }, projection: { date: 1, precision: 1, title: 1, body: 1, sources: 1 } })
+    .toArray();
+  return rows.map((e) => ({ id: e._id.toHexString(), date: e.date, precision: e.precision, title: e.title, body: e.body, sources: e.sources }));
 }
 
 /** Most recent changes across all platforms (first captures excluded). */

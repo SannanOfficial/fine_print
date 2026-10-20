@@ -1215,6 +1215,20 @@ del::after {
 .form-inline {
   margin-top: 0.75rem;
 }
+.delete-event {
+  margin-top: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.9375rem;
+}
+.delete-event input {
+  font: inherit;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+}
 
 /* Newsletter pages: one column of reading width. */
 .narrow {
@@ -1988,6 +2002,23 @@ code {
 }
 .rt-entry.is-start .rt-body::before {
   border-color: var(--ink-faint);
+}
+/* A reported event: a diamond rather than a dot, so it reads apart from document changes. */
+.rt-entry.is-event .rt-body::before {
+  border-radius: 1px;
+  transform: rotate(45deg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+.rt-event-text {
+  margin-top: 0.35rem;
+  font-size: 1rem;
+  text-wrap: pretty;
+}
+.rt-sources {
+  margin-top: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
 }
 .rt-meta {
   font-size: 0.9375rem;

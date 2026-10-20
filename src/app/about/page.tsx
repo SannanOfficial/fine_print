@@ -51,7 +51,7 @@ export default function About() {
 
       <h2>Summaries</h2>
       <p>
-        Each recorded change gets a short summary in plain English, written by an OpenAI GPT model from the changed
+        Each recorded change gets a short summary in plain English, written by an AI model from the changed
         paragraphs only. Until an editor has checked it, a summary is labelled as an unreviewed AI draft. A draft that
         names a web or email address is never published, since the platform&rsquo;s own text may have steered it; an
         editor writes those. Editors can correct or withdraw any summary. The redline

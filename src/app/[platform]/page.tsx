@@ -8,7 +8,7 @@ import { StatusLine } from "@/components/Record.tsx";
 import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { RecordTimeline, StandingPanel } from "@/components/Timeline.tsx";
 import { audienceLabel, documentKey } from "@/core/platforms.ts";
-import { getDocumentFacts, getHistory, getStatuses } from "@/lib/data.ts";
+import { getDocumentFacts, getEvents, getHistory, getStatuses } from "@/lib/data.ts";
 import { pageMetadata } from "@/lib/meta.ts";
 import { getPlatform, getPlatforms } from "@/lib/registry.ts";
 import { breadcrumbs, JsonLd, platformEntity, webPage } from "@/lib/structured-data.tsx";
@@ -43,10 +43,16 @@ export default function PlatformPage({ params }: PageProps<"/[platform]">) {
 
 async function PlatformView({ slug }: { slug: string }) {
   await connection();
-  const [platforms, statuses, history, facts] = await Promise.all([getPlatforms(), getStatuses(), getHistory(slug), getDocumentFacts()]);
+  const [platforms, statuses, history, facts, events] = await Promise.all([
+    getPlatforms(),
+    getStatuses(),
+    getHistory(slug),
+    getDocumentFacts(),
+    getEvents(slug),
+  ]);
   const platform = platforms.find((p) => p.slug === slug);
   if (!platform) notFound();
-  const timeline = buildTimeline(platform, history);
+  const timeline = buildTimeline(platform, history, events);
   const standing = standingOf(platform, timeline);
 
   const path = `/${platform.slug}`;

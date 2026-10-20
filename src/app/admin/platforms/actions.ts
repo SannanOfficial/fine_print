@@ -21,6 +21,7 @@ import {
   type ChangeStats,
   type ChangeSummaryRecord,
   type CheckRecord,
+  type EventRecord,
   type PlatformRecord,
   type StatusRecord,
   type SubmissionRecord,
@@ -70,6 +71,7 @@ async function collections() {
     checks: db.collection<CheckRecord>(COLLECTIONS.checks),
     submissions: db.collection<SubmissionRecord>(COLLECTIONS.submissions),
     subscribers: db.collection<SubscriberRecord>(COLLECTIONS.subscribers),
+    events: db.collection<EventRecord>(COLLECTIONS.events),
   };
 }
 
@@ -523,4 +525,76 @@ export async function recordVersion(
       ? `/admin/record?doc=${platformSlug}/${documentSlug}&recorded=${recorded}`
       : `/admin/platforms/${platformSlug}/${documentSlug}?recorded=${recorded}`,
   );
+}
+
+/* ---------- Reported events ---------- */
+
+export type EventValues = { date: string; precision: string; title: string; body: string; sources: string };
+export type EventState = { ok: boolean; message: string; values: EventValues; key: number } | null;
+
+/** "Label | https://…" per line, as typed in the form. */
+function parseSources(text: string): { label: string; url: string }[] | string {
+  const sources = [];
+  for (const line of lines(text)) {
+    const bar = line.lastIndexOf("|");
+    const [label, url] = bar < 0 ? [line.trim(), ""] : [line.slice(0, bar).trim(), line.slice(bar + 1).trim()];
+    if (!label || !url) return `Write each source as "Label | https://address": "${line.slice(0, 60)}" isn't.`;
+    if (!isHttpsUrl(url)) return `Source addresses must start with https://: "${url.slice(0, 60)}".`;
+    if (label.length > 120) return "Keep each source's label under 120 characters.";
+    sources.push({ label, url });
+  }
+  return sources;
+}
+
+/**
+ * An event on a company's timeline: something reported about its terms that
+ * isn't a document's text, such as a contract sent privately or a rollout
+ * paused. Every event cites where it was reported.
+ */
+export async function addEvent(platformSlug: string, _previous: EventState, form: FormData): Promise<EventState> {
+  const values: EventValues = {
+    date: field(form, "date"),
+    precision: field(form, "precision") === "month" ? "month" : "day",
+    title: field(form, "title"),
+    body: (typeof form.get("body") === "string" ? (form.get("body") as string) : "").replace(/\r\n?/g, "\n").trim(),
+    sources: field(form, "sources"),
+  };
+  const fail = (message: string): EventState => ({ ok: false, message, values, key: Date.now() });
+  const admin = await adminForAction();
+  if (!admin) return fail(SESSION_EXPIRED);
+  if (!isSlug(platformSlug)) return fail("This platform no longer exists.");
+  if (!validDate(values.date)) return fail("Enter the date it happened (a real date, no later than today). For a month, use any day in it.");
+  if (values.title.length < 3 || values.title.length > 200) return fail("Give the event a short title (up to 200 characters).");
+  if (!values.body || values.body.length > 4000) return fail("Describe what happened in up to 4,000 characters.");
+  const sources = parseSources(values.sources);
+  if (typeof sources === "string") return fail(sources);
+  if (sources.length === 0 || sources.length > 8) return fail("Cite between one and eight sources, one per line.");
+
+  const c = await collections();
+  if (!(await c.platforms.findOne({ _id: platformSlug }, { projection: { _id: 1 } }))) return fail("This platform no longer exists.");
+  const now = new Date();
+  await c.events.insertOne({
+    _id: new ObjectId(),
+    platform: platformSlug,
+    date: values.precision === "month" ? `${values.date.slice(0, 7)}-01` : values.date,
+    precision: values.precision as "day" | "month",
+    title: values.title,
+    body: values.body,
+    sources,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: admin.email,
+  });
+  updateTag("events");
+  return { ok: true, message: "Added to the timeline.", values: { date: "", precision: "day", title: "", body: "", sources: "" }, key: Date.now() };
+}
+
+export async function deleteEvent(platformSlug: string, id: string, _previous: SimpleState, form: FormData): Promise<SimpleState> {
+  if (!(await adminForAction())) return { ok: false, message: SESSION_EXPIRED };
+  if (!isSlug(platformSlug) || !/^[a-f0-9]{24}$/.test(id)) return { ok: false, message: "This event no longer exists." };
+  if (field(form, "confirm") !== "delete") return { ok: false, message: "Type \u201cdelete\u201d to confirm." };
+  const result = await (await collections()).events.deleteOne({ _id: new ObjectId(id), platform: platformSlug });
+  if (result.deletedCount === 0) return { ok: false, message: "This event no longer exists." };
+  updateTag("events");
+  return { ok: true, message: "Removed from the timeline." };
 }

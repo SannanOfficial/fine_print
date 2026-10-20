@@ -55,6 +55,7 @@ export const METHOD_TAG: Record<CaptureMethod, string | null> = {
   auto: null,
   manual: "Captured by hand",
   submission: "Shared by a clinician",
+  archive: "From the Internet Archive",
 };
 
 /** Dated list of versions, newest first. */

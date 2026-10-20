@@ -25,7 +25,7 @@ export function SummaryBox({ summary }: { summary: ChangeSummary }) {
         </ul>
       )}
       <p className="summary-note">
-        {summary.byAi ? "Drafted by an OpenAI GPT model from the changed paragraphs. " : ""}A summary may leave things out;
+        {summary.byAi ? "Drafted by an AI model from the changed paragraphs. " : ""}A summary may leave things out;
         the redline below is the exact record.
       </p>
     </aside>

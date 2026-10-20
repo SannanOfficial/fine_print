@@ -53,7 +53,9 @@ test("characters the font lacks are swapped, not shown as boxes", () => {
 });
 
 test("the record PDF is a multi-page PDF with the company's details", async () => {
-  const timeline = buildTimeline(platform, history);
+  const timeline = buildTimeline(platform, history, [
+    { id: "e1", date: "2026-10-16", precision: "day", title: "Rollout paused", body: "Acme paused the rollout.\n\nSignatures were voided.", sources: [{ label: "Trade press", url: "https://news.example/paused" }] },
+  ]);
   const pdf = await recordPdf({
     platform,
     standing: standingOf(platform, timeline, new Date("2026-10-19T00:00:00.000Z")),
@@ -67,6 +69,7 @@ test("the record PDF is a multi-page PDF with the company's details", async () =
   assert.match(raw, /\/DisplayDocTitle true/, "viewers show the title, not the file name");
   assert.ok((raw.match(/\/Type \/Page\b/g) ?? []).length >= 2, "the timeline runs over more than one page");
   assert.match(raw, /\/URI \(https:\/\/fineprint\.example\/acme\/terms\/0+1\)/, "changes link to their redlines");
+  assert.match(raw, /\/URI \(https:\/\/news\.example\/paused\)/, "events link to their sources");
 });
 
 test("entries never split across pages, unless one is taller than a page", async () => {

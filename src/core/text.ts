@@ -36,12 +36,19 @@ export function foldTypography(text: string): string {
 }
 
 /**
- * What two blocks are compared by. Besides typography, a list item's number
- * is ignored, so inserting one item doesn't turn every item after it into
- * an "edit".
+ * What two blocks are compared by. Besides typography, formatting is
+ * ignored: a heading's level, and whether a list item is numbered or
+ * bulleted (or renumbered), so inserting one item doesn't turn every item
+ * after it into an "edit".
  */
 export function compareKey(block: string): string {
-  return foldTypography(block).replace(/^(\s*)\d+[.)](\s+)/, "$11.$2");
+  return (
+    foldTypography(block)
+      // A heading moved up or down a level is still the same heading.
+      .replace(/^#{1,6}(\s+)/, "#$1")
+      // Bullets and numbers mark list items alike; renumbering or switching between them is formatting.
+      .replace(/^(\s*)(?:[-*+]|\d+[.)])(\s+)/, "$1-$2")
+  );
 }
 
 /** Remove inline Markdown (links, emphasis, escapes) and keep the readable text. */

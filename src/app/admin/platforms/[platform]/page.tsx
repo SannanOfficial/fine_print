@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { getPlatformForEdit } from "@/lib/admin-data.ts";
+import { getPlatformForEdit, listEvents } from "@/lib/admin-data.ts";
+import { formatDay } from "@/lib/format.ts";
 import { requireAdmin } from "@/lib/auth.ts";
 import { AdminBar } from "../../AdminBar.tsx";
 import { AdminStatus } from "../AdminStatus.tsx";
-import { DeleteForm, DocumentForm, PlatformForm } from "../forms.tsx";
+import { DeleteEvent, DeleteForm, DocumentForm, EventForm, PlatformForm } from "../forms.tsx";
 
 export default function PlatformAdmin({ params, searchParams }: PageProps<"/admin/platforms/[platform]">) {
   return (
@@ -21,6 +22,7 @@ async function PlatformEditor({ slug, notice }: { slug: string; notice: "added" 
   const admin = await requireAdmin();
   const p = await getPlatformForEdit(slug);
   if (!p) notFound();
+  const events = await listEvents(slug);
   const hasVersions = p.rows.some((d) => d.versions > 0);
 
   return (
@@ -79,6 +81,35 @@ async function PlatformEditor({ slug, notice }: { slug: string; notice: "added" 
             source: "",
           }}
         />
+      </section>
+
+      <section className="section" aria-labelledby="events-title">
+        <div className="section-head">
+          <h2 id="events-title">Reported events</h2>
+          <span className="label">{events.length}</span>
+        </div>
+        {events.length > 0 && (
+          <ol className="docket">
+            {events.map((e) => (
+              <li key={e.id}>
+                <time className="mono" dateTime={e.date}>
+                  {e.precision === "month" ? e.date.slice(0, 7) : formatDay(`${e.date}T00:00:00Z`)}
+                </time>
+                <div className="docket-what">
+                  <span>
+                    {e.title}
+                    <span className="index-kind">
+                      {" "}
+                      · {e.sources} {e.sources === 1 ? "source" : "sources"} · added by {e.updatedBy}
+                    </span>
+                  </span>
+                  <DeleteEvent platformSlug={p.slug} id={e.id} />
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        <EventForm platformSlug={p.slug} />
       </section>
 
       <section className="section" aria-labelledby="edit-title">

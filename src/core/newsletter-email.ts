@@ -114,8 +114,8 @@ export function receiptEmail(input: { reference: string; siteUrl: string; contac
 function summaryLabel(s: NonNullable<DigestChange["summary"]>): string {
   if (!s.byAi) return "Summary by a Fine Print editor";
   return s.reviewed
-    ? "Summary written with AI (OpenAI GPT) and checked by a Fine Print editor"
-    : "Summary written by AI (OpenAI GPT), not yet checked by an editor";
+    ? "Summary written with AI and checked by a Fine Print editor"
+    : "Summary written by AI, not yet checked by an editor";
 }
 
 function subjectFor(groups: DigestGroup[], days: number): string {

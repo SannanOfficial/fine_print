@@ -102,3 +102,8 @@ test("hidden text is left out of the record", () => {
 test("sign-in never returns to the sign-in page itself", () => {
   assert.equal(afterLogin("/admin/login?next=%2Fadmin"), "/admin");
 });
+
+test("a heading's level and a list's style are formatting, not wording", () => {
+  assert.ok(sameWording("# Terms\n\n1. You agree.\n2. We may change fees.", "## Terms\n\n- You agree.\n- We may change fees."));
+  assert.ok(!sameWording("## Terms\n\n- You agree.", "## Terms\n\n- You do not agree."));
+});

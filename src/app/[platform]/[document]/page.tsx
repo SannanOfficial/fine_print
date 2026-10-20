@@ -158,8 +158,8 @@ async function DocumentView({ platformSlug, documentSlug }: { platformSlug: stri
           <div className="section-head">
             <h2 id="text-title">Current text</h2>
             <span className="mono">
-              Captured {formatDay(latest.capturedAt)}
-              {latest.method === "auto"
+              {latest.method === "archive" ? "First archived" : "Captured"} {formatDay(latest.capturedAt)}
+              {latest.method === "auto" || latest.method === "archive"
                 ? ` · still published ${formatDay(latest.lastSeenAt)}`
                 : latest.method === "submission"
                   ? " · shared by a clinician"

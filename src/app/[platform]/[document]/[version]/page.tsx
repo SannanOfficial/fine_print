@@ -21,6 +21,7 @@ const CAPTURED: Record<CaptureMethod, string> = {
   auto: "Automatically, from the public page",
   manual: "By hand, by a Fine Print editor",
   submission: "Shared privately by a clinician and confirmed by a Fine Print editor",
+  archive: "From the Internet Archive's copy of the public page, added to the record later",
 };
 
 export async function generateMetadata({ params }: PageProps<"/[platform]/[document]/[version]">): Promise<Metadata> {
@@ -138,7 +139,7 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
       {!next && (
         <p className="note superseded is-current">
           This is the latest version on the record
-          {version.method === "auto"
+          {version.method === "auto" || version.method === "archive"
             ? `, last seen published ${formatDay(version.lastSeenAt)}`
             : version.method === "submission"
               ? ". It was shared privately by a clinician, so the public page may say something else"
@@ -157,7 +158,8 @@ async function VersionView({ platform, document, id }: { platform: Platform; doc
       )}
 
       <dl className="facts">
-        <dt>Recorded on</dt>
+        {/* An archived version wasn't recorded by us then; the date is when the Internet Archive first saw it. */}
+        <dt>{version.method === "archive" ? "First archived" : "Recorded on"}</dt>
         <dd>{formatDayTime(version.capturedAt)}</dd>
         {version.datedOn && (
           <>
