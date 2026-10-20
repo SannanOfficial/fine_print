@@ -22,6 +22,9 @@ export const DEFAULT_CONTACT_EMAIL = "contact@syedsannan.com";
 /** Where the project takes optional support for its upkeep. */
 export const PATREON_URL = "https://www.patreon.com/c/SannanOfficial/membership";
 
+/** The project's public source code. */
+export const GITHUB_URL = "https://github.com/SannanOfficial/fine_print";
+
 /**
  * Where readers write with corrections and questions. Also the reply address
  * of every email the site sends.

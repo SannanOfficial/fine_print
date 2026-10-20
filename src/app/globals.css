@@ -2143,6 +2143,9 @@ code {
 .support-option:first-child {
   border-color: var(--ink);
 }
+.support-option-wide {
+  grid-column: 1 / -1;
+}
 .support-option .label {
   margin-bottom: 0.35rem;
 }

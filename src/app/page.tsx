@@ -6,7 +6,7 @@ import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { CheckTimeline, ClauseDrift, ClauseSpecimen, EmailVersusChanges, HowItWorks, TwoSources } from "@/components/Infographics.tsx";
 import { Docket, StatusLine } from "@/components/Record.tsx";
 import { documentKey, findDocument, type Platform } from "@/core/platforms.ts";
-import { contactEmail, PATREON_URL, SITE_DESCRIPTION } from "@/core/site.ts";
+import { contactEmail, GITHUB_URL, PATREON_URL, SITE_DESCRIPTION } from "@/core/site.ts";
 import { getDocumentFacts, getRecentChanges, getStatuses, type DocumentFacts, type PublicStatus } from "@/lib/data.ts";
 import { FEED } from "@/lib/meta.ts";
 import { getPlatforms } from "@/lib/registry.ts";
@@ -171,7 +171,7 @@ export default function Home() {
         <h2 id="support-title">Support the record</h2>
         <div className="prose">
           <p>
-            Fine Print is kept by one maintainer and the clinicians who contribute to it. There are two ways to help.
+            Fine Print is kept by one maintainer and the clinicians who contribute to it. There are three ways to help.
           </p>
         </div>
         <div className="support-grid">
@@ -196,6 +196,17 @@ export default function Home() {
             </p>
             <ExternalLink href={PATREON_URL} className="button">
               Support on Patreon
+            </ExternalLink>
+          </div>
+          <div className="support-option support-option-wide">
+            <p className="label">Open source</p>
+            <p className="support-title">Check or improve the code</p>
+            <p className="support-text">
+              Everything that fetches, compares and publishes the record is public under the MIT License. See exactly
+              how it works, report a problem, or suggest a fix.
+            </p>
+            <ExternalLink href={GITHUB_URL} className="button">
+              View the code on GitHub
             </ExternalLink>
           </div>
         </div>
