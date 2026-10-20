@@ -1,5 +1,5 @@
 import { NodeHtmlMarkdown } from "node-html-markdown";
-import { parse, type HTMLElement } from "node-html-parser";
+import { HTMLElement, parse } from "node-html-parser";
 import type { TrackedDocument } from "../core/platforms.ts";
 import { normalizeMarkdown } from "../core/text.ts";
 
@@ -68,6 +68,28 @@ function restoreEmails(root: HTMLElement) {
   }
 }
 
+/**
+ * A Markdown table cell holds one line, so line breaks, paragraphs and lists
+ * inside a cell would otherwise glue their words together ("our
+ * ServicesProviding customer service"). A list becomes its items separated
+ * by semicolons. Innermost first, so a nested list is flattened before the
+ * list around it.
+ */
+function separateCellContent(container: HTMLElement): void {
+  for (const br of container.querySelectorAll("td br, th br")) br.replaceWith(" ");
+  for (const list of container.querySelectorAll("td ul, td ol, th ul, th ol").reverse()) {
+    const items = list.childNodes.filter((n): n is HTMLElement => n instanceof HTMLElement && n.tagName === "LI");
+    const joined = items
+      .map((li, i) => {
+        const html = li.innerHTML.trim();
+        return i < items.length - 1 && !/[.;:,]$/.test(li.text.trim()) ? `${html};` : html;
+      })
+      .join(" ");
+    list.replaceWith(` ${joined} `);
+  }
+  for (const block of container.querySelectorAll("td p, td div, th p, th div").reverse()) block.replaceWith(` ${block.innerHTML} `);
+}
+
 export interface Extracted {
   content: string;
   selector: string;
@@ -95,8 +117,7 @@ export function extractDocument(html: string, doc: Pick<TrackedDocument, "select
     for (const node of container.querySelectorAll(selector)) node.remove();
   }
   restoreEmails(container);
-  // A line break inside a table cell would otherwise glue the words together.
-  for (const br of container.querySelectorAll("td br, th br")) br.replaceWith(" ");
+  separateCellContent(container);
 
   const content = normalizeMarkdown(markdown.translate(container.innerHTML));
   if (content.length < MIN_DOCUMENT_CHARS) {
