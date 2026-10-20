@@ -10,6 +10,7 @@ import {
   type SessionRecord,
   type StatusRecord,
   type SubscriberRecord,
+  type EventRecord,
   type VersionRecord,
 } from "../core/records.ts";
 
@@ -37,6 +38,7 @@ export function collections(db: Db) {
     admins: db.collection<AdminRecord>(COLLECTIONS.admins),
     sessions: db.collection<SessionRecord>(COLLECTIONS.sessions),
     subscribers: db.collection<SubscriberRecord>(COLLECTIONS.subscribers),
+    events: db.collection<EventRecord>(COLLECTIONS.events),
   };
 }
 

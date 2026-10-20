@@ -7,14 +7,17 @@ import { MANUAL_REASONS } from "@/core/platforms.ts";
 import { describeStats } from "@/lib/format.ts";
 import {
   addDocument,
+  addEvent,
   addPlatform,
   deleteDocument,
+  deleteEvent,
   deletePlatform,
   recordVersion,
   updateDocument,
   updatePlatform,
   type DocumentState,
   type DocumentValues,
+  type EventState,
   type PlatformState,
   type PlatformValues,
   type RecordValues,
@@ -208,6 +211,63 @@ export function DeleteForm({
       <button type="submit" className="button button-danger" disabled={pending}>
         {pending ? "Deleting…" : documentSlug ? "Delete document" : "Delete platform"}
       </button>
+    </form>
+  );
+}
+
+/* ---------- Reported events ---------- */
+
+export function EventForm({ platformSlug }: { platformSlug: string }) {
+  const [state, action, pending] = useActionState<EventState, FormData>(addEvent.bind(null, platformSlug), null);
+  const v = state?.values ?? { date: "", precision: "day", title: "", body: "", sources: "" };
+  return (
+    <form action={action} className="form" key={state?.key}>
+      <p className="hint">
+        Something reported about this company&rsquo;s terms that isn&rsquo;t a document&rsquo;s text: a contract sent
+        privately, a new fee, a rollout paused. It appears on the public timeline and in the PDF. State only what the
+        sources report, and cite them.
+      </p>
+      <div className="field-row">
+        <Field id="event-date" label="Date it happened">
+          <input id="event-date" name="date" type="date" defaultValue={v.date} required />
+        </Field>
+        <Field id="event-precision" label="How exact">
+          <select id="event-precision" name="precision" defaultValue={v.precision}>
+            <option value="day">That day</option>
+            <option value="month">Only the month is known</option>
+          </select>
+        </Field>
+      </div>
+      <Field id="event-title" label="Title">
+        <input id="event-title" name="title" defaultValue={v.title} maxLength={200} required />
+      </Field>
+      <Field id="event-body" label="What happened" hint="Plain text. Leave a blank line between paragraphs.">
+        <textarea id="event-body" name="body" rows={5} defaultValue={v.body} maxLength={4000} aria-describedby="event-body-hint" required />
+      </Field>
+      <Field id="event-sources" label="Sources" hint="One per line: Label | https://address">
+        <textarea id="event-sources" name="sources" rows={3} defaultValue={v.sources} aria-describedby="event-sources-hint" required />
+      </Field>
+      <Message state={state} />
+      <button type="submit" className="button button-primary" disabled={pending}>
+        {pending ? "Adding…" : "Add to the timeline"}
+      </button>
+    </form>
+  );
+}
+
+export function DeleteEvent({ platformSlug, id }: { platformSlug: string; id: string }) {
+  const [state, action, pending] = useActionState<SimpleState, FormData>(deleteEvent.bind(null, platformSlug, id), null);
+  if (state?.ok) return <Message state={state} />;
+  return (
+    <form action={action} className="form-inline delete-event">
+      <label className="visually-hidden" htmlFor={`confirm-${id}`}>
+        Type delete to remove this event
+      </label>
+      <input id={`confirm-${id}`} name="confirm" placeholder="type “delete”" autoComplete="off" size={12} />
+      <button type="submit" className="link-button" disabled={pending}>
+        {pending ? "Removing…" : "Remove"}
+      </button>
+      <Message state={state} />
     </form>
   );
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Platform } from "../core/platforms.ts";
 import type { VersionSummary } from "./data.ts";
-import { buildTimeline, byYear, standingOf } from "./timeline.ts";
+import { buildTimeline, byYear, standingOf, type TimelineItem } from "./timeline.ts";
 
 const platform: Platform = {
   slug: "acme",
@@ -39,7 +39,7 @@ const history = [
 ];
 
 test("the timeline covers every tracked document, newest first, by the date on the document when there is one", () => {
-  const items = buildTimeline(platform, history);
+  const items = buildTimeline(platform, history) as TimelineItem[];
   assert.equal(items.length, 5, "the untracked document is left out");
   assert.deepEqual(
     items.map((i) => [i.documentTitle, i.date.slice(0, 10)]),
@@ -68,7 +68,18 @@ test("the overview counts changes, not first copies", () => {
 });
 
 test("tracking began when the first copy was recorded, even if that copy carries an older date", () => {
-  const items = buildTimeline(platform, [v({ capturedAt: "2026-10-01T08:00:00.000Z", isFirst: true, stats: null, datedOn: "2019-05-01" })]);
+  const items = buildTimeline(platform, [v({ capturedAt: "2026-10-01T08:00:00.000Z", isFirst: true, stats: null, datedOn: "2019-05-01" })]) as TimelineItem[];
   assert.equal(items[0].date.slice(0, 10), "2019-05-01", "the entry shows the document's own date");
   assert.equal(standingOf(platform, items, new Date("2026-10-19T00:00:00.000Z")).trackedSince?.slice(0, 10), "2026-10-01");
+});
+
+test("reported events sit on the timeline by date and are counted apart from changes", () => {
+  const entries = buildTimeline(platform, history, [
+    { id: "e1", date: "2026-10-16", precision: "day", title: "Rollout paused", body: "The company paused it.", sources: [{ label: "A report", url: "https://news.example/a" }] },
+    { id: "e2", date: "2025-02-01", precision: "month", title: "Fee announced", body: "A fee.", sources: [] },
+  ]);
+  assert.deepEqual(entries.map((e) => (e.kind === "event" ? e.title : e.date.slice(0, 10))), ["2026-10-18", "Rollout paused", "2026-09-01", "2025-03-01", "Fee announced", "2025-01-01", "2024-06-01"]);
+  const s = standingOf(platform, entries, new Date("2026-10-19T00:00:00.000Z"));
+  assert.equal(s.events, 2);
+  assert.equal(s.changes, 3, "events aren't changes");
 });

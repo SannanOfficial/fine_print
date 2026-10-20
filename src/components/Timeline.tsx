@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { ExternalLink } from "@/components/ExternalLink.tsx";
 import { describeStats, formatDay, formatDayTime } from "@/lib/format.ts";
-import { byYear, METHOD_NOTE, summarySource, type Standing, type TimelineItem } from "@/lib/timeline.ts";
+import { byYear, eventDate, METHOD_NOTE, summarySource, type Standing, type TimelineEntry, type TimelineEvent, type TimelineItem } from "@/lib/timeline.ts";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
@@ -26,13 +27,14 @@ export function StandingPanel({ standing, name, pdfHref }: { standing: Standing;
           <dd>{s.sharedPrivately.toLocaleString("en-US")}</dd>
         </div>
         <div>
-          <dt>Tracked since</dt>
+          <dt>On the record since</dt>
           <dd className="is-date">{s.trackedSince ? formatDay(s.trackedSince) : "Not yet"}</dd>
         </div>
       </dl>
       <p className="standing-notes">
         {plural(s.documents, "document")} tracked
         {s.lastChange ? ` · last change ${formatDay(s.lastChange)}` : " · no changes recorded yet"}
+        {s.events > 0 && ` · ${plural(s.events, "reported event")}`}
         {s.changes > 0 &&
           ` · summaries: ${s.summaries.reviewed} checked by an editor, ${s.summaries.aiDrafts} AI ${s.summaries.aiDrafts === 1 ? "draft" : "drafts"}${
             s.summaries.none ? `, ${s.summaries.none} without one` : ""
@@ -50,8 +52,8 @@ export function StandingPanel({ standing, name, pdfHref }: { standing: Standing;
   );
 }
 
-/** Every change to every document, newest first, grouped by year. */
-export function RecordTimeline({ items }: { items: TimelineItem[] }) {
+/** Every change to every document, and the events around them, newest first, grouped by year. */
+export function RecordTimeline({ items }: { items: TimelineEntry[] }) {
   return (
     <div className="record-timeline">
       {byYear(items).map(([year, list]) => (
@@ -60,9 +62,7 @@ export function RecordTimeline({ items }: { items: TimelineItem[] }) {
             {year}
           </h3>
           <ol className="rt-list">
-            {list.map((item) => (
-              <TimelineEntry key={item.id} item={item} />
-            ))}
+            {list.map((item) => (item.kind === "event" ? <EventEntry key={item.id} event={item} /> : <VersionEntry key={item.id} item={item} />))}
           </ol>
         </section>
       ))}
@@ -70,7 +70,40 @@ export function RecordTimeline({ items }: { items: TimelineItem[] }) {
   );
 }
 
-function TimelineEntry({ item }: { item: TimelineItem }) {
+/** Something that happened, in the words of the reports it cites. */
+function EventEntry({ event: e }: { event: TimelineEvent }) {
+  return (
+    <li className="rt-entry is-event">
+      <time className="rt-date" dateTime={e.precision === "month" ? e.date.slice(0, 7) : e.date.slice(0, 10)}>
+        {eventDate(e, formatDay)}
+      </time>
+      <div className="rt-body">
+        <p className="rt-source">Reported</p>
+        <p className="rt-headline">{e.title}</p>
+        {e.body.split(/\n{2,}/).map((paragraph, i) => (
+          <p key={i} className="rt-event-text">
+            {paragraph}
+          </p>
+        ))}
+        {e.sources.length > 0 && (
+          <p className="rt-sources">
+            {e.sources.length === 1 ? "Source: " : "Sources: "}
+            {e.sources.map((source, i) => (
+              <span key={`${i}-${source.url}`}>
+                {i > 0 && " · "}
+                <ExternalLink href={source.url} rel="nofollow">
+                  {source.label}
+                </ExternalLink>
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function VersionEntry({ item }: { item: TimelineItem }) {
   const when = (
     <time className="rt-date" dateTime={item.date} title={item.recordedAt ? undefined : formatDayTime(item.date)}>
       {formatDay(item.date)}

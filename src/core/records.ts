@@ -34,6 +34,8 @@ export const COLLECTIONS = {
   rateLimits: "rate_limits",
   /** Newsletter subscribers. Addresses are encrypted. */
   subscribers: "subscribers",
+  /** Dated, sourced events in a company's record (a rollout, a reversal, a new fee). Added by editors. */
+  events: "events",
 
   // Managed only with `npm run admin`:
   admins: "admins",
@@ -43,8 +45,11 @@ export const COLLECTIONS = {
  * "auto": read from the public page by the crawler (or an admin's "Fetch now").
  * "manual": saved from a browser or typed in by an admin.
  * "submission": sent privately by a clinician and confirmed by an editor.
+ * "archive": an earlier version recovered from the Internet Archive's copy of
+ *   the public page. `capturedAt` is when the archive first saw that text and
+ *   `sourceUrl` the archived copy, so anyone can check it.
  */
-export type CaptureMethod = "auto" | "manual" | "submission";
+export type CaptureMethod = "auto" | "manual" | "submission" | "archive";
 
 /** A tracked platform as stored. The slug is the _id, so it is unique and fixed. */
 export interface PlatformRecord extends Omit<Platform, "slug"> {
@@ -82,8 +87,8 @@ export interface VersionRecord {
   recordedBy?: string;
   /**
    * The date printed on the document or on the email that carried it
-   * (YYYY-MM-DD), as entered by an editor. Only for versions recorded by
-   * hand; `capturedAt` is always when we recorded it.
+   * (YYYY-MM-DD), as entered by an editor. `capturedAt` is when we recorded
+   * it, or for "archive" versions when the Internet Archive first saw it.
    */
   datedOn?: string | null;
   previousId: ObjectId | null;
@@ -269,4 +274,25 @@ export interface SubscriberRecord {
   bounces?: number;
   /** When the last refusal was counted, so re-running the job in one week counts once. */
   lastBounceAt?: Date;
+}
+
+/**
+ * Something that happened in a company's record that isn't a document's
+ * text: a contract sent privately, a rollout paused, a new fee. Shown on the
+ * company's timeline between its document changes. Every event cites where
+ * it was reported.
+ */
+export interface EventRecord {
+  _id: ObjectId;
+  platform: string;
+  /** YYYY-MM-DD. With precision "month", only the year and month are meaningful. */
+  date: string;
+  precision: "day" | "month";
+  title: string;
+  /** Plain text; paragraphs separated by a blank line. */
+  body: string;
+  sources: { label: string; url: string }[];
+  createdAt: Date;
+  updatedAt: Date;
+  updatedBy: string;
 }

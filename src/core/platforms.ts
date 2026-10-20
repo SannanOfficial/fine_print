@@ -56,6 +56,8 @@ const BLOCKED_BY_SITE =
   "This site blocks automated checks, so we capture this document by hand.";
 const NEEDS_BROWSER =
   "This page only shows its text after JavaScript runs, so we capture it by hand.";
+const PDF_ONLY = "Published only as a PDF in the company's legal center, so we capture it by hand.";
+const HEADWAY_LEGAL_CENTER = "https://vault.pactsafe.io/s/684ab194-8812-43cd-90cb-22cfc8d0a5b0/legal.html";
 
 export const SEED_PLATFORMS: Platform[] = [
   {
@@ -68,10 +70,57 @@ export const SEED_PLATFORMS: Platform[] = [
         slug: "terms-of-service",
         title: "Terms of Service",
         audience: "everyone",
-        url: null,
+        url: "https://headway.co/legal/terms",
         mode: "manual",
         manualReason: BLOCKED_BY_SITE,
-        selectors: ["main", "article", "body"],
+        selectors: ["article", "main", "body"],
+        remove: ["nav", "header", "footer"],
+      },
+      {
+        slug: "privacy-policy",
+        title: "Privacy Policy",
+        audience: "everyone",
+        url: "https://headway.co/legal/privacy",
+        mode: "manual",
+        manualReason: BLOCKED_BY_SITE,
+        selectors: ["#legal-root", "main"],
+      },
+      {
+        slug: "biometric-data-policy",
+        title: "Biometric Data Policy",
+        audience: "everyone",
+        url: "https://headway.co/legal/biometric-data-policy",
+        mode: "manual",
+        manualReason: BLOCKED_BY_SITE,
+        selectors: ["#legal-root", "main"],
+      },
+      // Headway publishes its provider contracts as PDFs in a legal center hosted by PactSafe.
+      {
+        slug: "provider-agreement",
+        title: "Provider Agreement",
+        audience: "providers",
+        url: HEADWAY_LEGAL_CENTER,
+        mode: "manual",
+        manualReason: PDF_ONLY,
+        selectors: ["body"],
+      },
+      {
+        slug: "arbitration-agreement",
+        title: "Arbitration Agreement (Individual)",
+        audience: "providers",
+        url: HEADWAY_LEGAL_CENTER,
+        mode: "manual",
+        manualReason: PDF_ONLY,
+        selectors: ["body"],
+      },
+      {
+        slug: "provider-platform-terms",
+        title: "Provider Platform Terms of Service",
+        audience: "providers",
+        url: HEADWAY_LEGAL_CENTER,
+        mode: "manual",
+        manualReason: PDF_ONLY,
+        selectors: ["body"],
       },
     ],
   },
@@ -186,10 +235,11 @@ export const SEED_PLATFORMS: Platform[] = [
         slug: "terms-of-service",
         title: "Terms of Service",
         audience: "providers",
-        url: null,
+        url: "https://www.therapynotes.com/legal/usertermsofservice/",
         mode: "manual",
         manualReason: BLOCKED_BY_SITE,
         selectors: ["main", "article", "body"],
+        remove: ["nav", "header", "footer"],
       },
     ],
   },

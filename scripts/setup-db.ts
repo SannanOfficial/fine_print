@@ -21,6 +21,7 @@ try {
     // Each version has at most one successor, so two saves at the same moment can't fork the history.
     { key: { platform: 1, document: 1, previousId: 1 }, name: "one_successor", unique: true },
   ]);
+  await db.collection(COLLECTIONS.events).createIndexes([{ key: { platform: 1, date: -1 }, name: "by_platform_newest" }]);
   await db.collection(COLLECTIONS.checks).createIndexes([
     { key: { platform: 1, document: 1, at: -1 }, name: "by_document_newest" },
     { key: { at: 1 }, name: "expire_old_checks", expireAfterSeconds: CHECK_LOG_DAYS * 24 * 60 * 60 },

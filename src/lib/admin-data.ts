@@ -5,6 +5,7 @@ import {
   COLLECTIONS,
   type CaptureMethod,
   type ChangeSummaryRecord,
+  type EventRecord,
   type PlatformRecord,
   type StatusRecord,
   type SubmissionDetails,
@@ -248,6 +249,13 @@ export async function listPlatformsWithFacts() {
 export async function getPlatformForEdit(slug: string) {
   const all = await listPlatformsWithFacts();
   return all.find((p) => p.slug === slug) ?? null;
+}
+
+/** A platform's reported events, newest first, for editors. */
+export async function listEvents(platform: string) {
+  await requireAdmin();
+  const rows = await (await getDb()).collection<EventRecord>(COLLECTIONS.events).find({ platform }, { sort: { date: -1, _id: -1 } }).toArray();
+  return rows.map((e) => ({ id: e._id.toHexString(), date: e.date, precision: e.precision, title: e.title, sources: e.sources.length, updatedBy: e.updatedBy }));
 }
 
 export interface AdminVersionRow {

@@ -63,6 +63,7 @@ db.createRole({
     { resource: { db: "fine_print", collection: "sessions" }, actions: ["insert", "remove"] },
     { resource: { db: "fine_print", collection: "rate_limits" }, actions: ["insert", "update"] },
     { resource: { db: "fine_print", collection: "subscribers" }, actions: ["insert", "update", "remove"] },
+    { resource: { db: "fine_print", collection: "events" }, actions: ["insert", "remove"] },
   ],
   roles: [],
 })
@@ -79,6 +80,7 @@ db.grantPrivilegesToRole("fineprintSite", [
   { resource: { db: "fine_print", collection: "status" }, actions: ["insert", "update", "remove"] },
   { resource: { db: "fine_print", collection: "checks" }, actions: ["insert"] },
   { resource: { db: "fine_print", collection: "subscribers" }, actions: ["insert", "update", "remove"] },
+  { resource: { db: "fine_print", collection: "events" }, actions: ["insert", "remove"] },
 ])
 ```
 
@@ -121,6 +123,17 @@ Some sites block automated requests (Headway and TherapyNotes use Cloudflare cha
 3. **Record this version.** It is marked "Captured by hand" on the site, and the AI summary is written in the background.
 
 The same works from the command line: `npm run capture -- simplepractice/terms-of-service ~/Downloads/terms.html --dry-run`, then again without `--dry-run`.
+
+### Earlier versions and reported events
+
+Versions from before a document joined the record (for example copies kept by the Internet Archive, shown as "From the Internet Archive" with the date the archive first saw them) are added in bulk from a prepared JSON plan, with their change summaries and any reported events:
+
+```sh
+npm run import -- plan.json --dry-run
+npm run import -- plan.json
+```
+
+The format is described at the top of `scripts/import-record.ts`. A history marked `replace` takes the place of the versions recorded so far, so do this only before anyone relies on those versions' addresses. Running the same plan again keeps the versions as they are and only refreshes AI summaries no editor has touched. Single events can also be added and removed on the platform's admin page, under **Reported events**.
 
 ## Change summaries
 

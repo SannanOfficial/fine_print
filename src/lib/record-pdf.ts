@@ -3,7 +3,7 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { audienceLabel, type Platform } from "../core/platforms.ts";
 import { describeStats, formatDay, formatDayTime } from "./format.ts";
-import { byYear, METHOD_NOTE, summarySource, type Standing, type TimelineItem } from "./timeline.ts";
+import { byYear, eventDate, METHOD_NOTE, summarySource, type Standing, type TimelineEntry, type TimelineEvent } from "./timeline.ts";
 
 /*
  * A company's record as a PDF: the overview, the documents tracked, and the
@@ -54,7 +54,7 @@ export function printable(text: string): string {
 export interface RecordPdfInput {
   platform: Platform;
   standing: Standing;
-  timeline: TimelineItem[];
+  timeline: TimelineEntry[];
   siteUrl: string;
   generatedAt: Date;
   /** For tests: which pages each timeline entry was drawn on. */
@@ -134,7 +134,7 @@ export function recordPdf({ platform, standing, timeline, siteUrl, generatedAt, 
     ["Changes recorded", String(standing.changes)],
     ["In the last 12 months", String(standing.changesInLastYear)],
     ["Shared privately by clinicians", String(standing.sharedPrivately)],
-    ["Tracked since", standing.trackedSince ? formatDay(standing.trackedSince) : "Not yet"],
+    ["On the record since", standing.trackedSince ? formatDay(standing.trackedSince) : "Not yet"],
   ];
   const col = width / figures.length;
   const top = doc.y;
@@ -152,6 +152,7 @@ export function recordPdf({ platform, standing, timeline, siteUrl, generatedAt, 
     [
       `${s.documents} ${s.documents === 1 ? "document" : "documents"} tracked.`,
       s.lastChange ? `Last change ${formatDay(s.lastChange)}.` : "No changes recorded yet.",
+      s.events > 0 ? `${s.events} reported ${s.events === 1 ? "event" : "events"} on the timeline, each with its sources.` : "",
       s.changes > 0
         ? `Summaries: ${s.summaries.reviewed} checked by an editor, ${s.summaries.aiDrafts} AI ${s.summaries.aiDrafts === 1 ? "draft" : "drafts"} not yet checked${s.summaries.none ? `, ${s.summaries.none} without a summary` : ""}.`
         : "",
@@ -190,12 +191,67 @@ export function recordPdf({ platform, standing, timeline, siteUrl, generatedAt, 
   const dateWidth = 92;
   const bodyX = left + dateWidth + 18;
   const bodyWidth = width - dateWidth - 18;
+  const gap = (size: number, lines: number) => doc.font("regular").fontSize(size).currentLineHeight(true) * lines;
+
+  /** A reported event: what happened, in the words of the reports it cites, with links to them. */
+  const drawEvent = (e: TimelineEvent) => {
+    const paragraphs = e.body.split(/\n{2,}/);
+    const sources = e.sources.map((src) => `${src.label}: ${src.url.replace(/^https?:\/\//, "")}`);
+    const needed =
+      8 +
+      height("bold", 8.5, "REPORTED", bodyWidth, { characterSpacing: 0.8 }) +
+      gap(8.5, 0.1) +
+      height("bold", 11.5, e.title, bodyWidth, { lineGap: 1 }) +
+      paragraphs.reduce((h, p) => h + gap(10.5, 0.2) + height("regular", 10.5, p, bodyWidth, { lineGap: 1 }), 0) +
+      gap(10.5, 0.3) +
+      sources.reduce((h, line) => h + height("regular", 9, line, bodyWidth), 0) +
+      10;
+    ensure(needed);
+    const firstPage = currentPage();
+    const top = doc.y + 8;
+    doc.moveTo(left, top - 4).lineTo(left + width, top - 4).lineWidth(0.5).strokeColor(RULE).stroke();
+    doc.font("bold").fontSize(9.5).fillColor(INK).text(smallCaps(eventDate(e, formatDay)), left, top + 1, { width: dateWidth, characterSpacing: 0.6 });
+    // A diamond rather than a dot, as on the site.
+    doc.save().translate(bodyX - 10, top + 5).rotate(45).rect(-2.8, -2.8, 5.6, 5.6).fill(WARN).restore();
+    doc.x = bodyX;
+    doc.y = top;
+    text("bold", 8.5, WARN, "REPORTED", { width: bodyWidth, characterSpacing: 0.8 });
+    doc.moveDown(0.1);
+    text("bold", 11.5, INK, e.title, { width: bodyWidth, lineGap: 1 });
+    for (const p of paragraphs) {
+      doc.moveDown(0.2);
+      text("regular", 10.5, INK, p, { width: bodyWidth, lineGap: 1 });
+    }
+    doc.moveDown(0.3);
+    e.sources.forEach((src, i) => {
+      doc.font("regular").fontSize(9).fillColor(SOFT).text(i === 0 ? "Sources: " : "", bodyX, doc.y, { continued: true, width: bodyWidth });
+      doc.fillColor(LINK).text(printable(sources[i]), { link: src.url });
+    });
+    const bottomY = doc.y + 6;
+    const lastPage = currentPage();
+    for (let page = firstPage; page <= lastPage; page++) {
+      doc.switchToPage(page);
+      doc
+        .moveTo(bodyX - 10, page === firstPage ? top + 9 : doc.page.margins.top)
+        .lineTo(bodyX - 10, page === lastPage ? bottomY : bottom())
+        .lineWidth(1.2)
+        .strokeColor(RULE)
+        .stroke();
+    }
+    report?.({ id: e.id, firstPage, lastPage });
+    doc.x = left;
+    doc.y = bottomY + 4;
+  };
   for (const [year, items] of byYear(timeline)) {
     ensure(70);
     doc.moveDown(0.9);
     text("bold", 15, INK, year, { width });
     doc.moveDown(0.2);
     for (const item of items) {
+      if (item.kind === "event") {
+        drawEvent(item);
+        continue;
+      }
       const link = `${siteUrl}${item.href}`;
       const linkLabel = item.isStart ? "Read this first copy: " : "See exactly what changed: ";
       const linkShown = link.replace(/^https?:\/\//, "");
@@ -209,7 +265,6 @@ export function recordPdf({ platform, standing, timeline, siteUrl, generatedAt, 
           : "No summary for this change. The redline shows exactly what changed.";
 
       // Measure the entry exactly as it is drawn below, so it starts on a new page rather than splitting.
-      const gap = (size: number, lines: number) => doc.font("regular").fontSize(size).currentLineHeight(true) * lines;
       const needed =
         8 +
         height("regular", 9.5, meta, bodyWidth) +

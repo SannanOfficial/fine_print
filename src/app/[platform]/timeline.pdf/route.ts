@@ -1,7 +1,7 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { type NextRequest, connection } from "next/server";
 import { publicSiteUrl } from "@/core/site.ts";
-import { getHistory } from "@/lib/data.ts";
+import { getEvents, getHistory } from "@/lib/data.ts";
 import { recordPdf } from "@/lib/record-pdf.ts";
 import { getPlatform } from "@/lib/registry.ts";
 import { buildTimeline, standingOf } from "@/lib/timeline.ts";
@@ -15,11 +15,12 @@ import { buildTimeline, standingOf } from "@/lib/timeline.ts";
 async function cachedPdf(slug: string): Promise<{ pdf: Uint8Array; day: string } | null> {
   "use cache";
   cacheLife("record");
-  cacheTag("versions", "summaries", "registry");
+  cacheTag("versions", "summaries", "registry", "events");
 
   const platform = await getPlatform(slug);
   if (!platform) return null;
-  const timeline = buildTimeline(platform, await getHistory(slug));
+  const [history, events] = await Promise.all([getHistory(slug), getEvents(slug)]);
+  const timeline = buildTimeline(platform, history, events);
   const generatedAt = new Date();
   const pdf = await recordPdf({ platform, standing: standingOf(platform, timeline, generatedAt), timeline, siteUrl: publicSiteUrl(), generatedAt });
   return { pdf: new Uint8Array(pdf), day: generatedAt.toISOString().slice(0, 10) };

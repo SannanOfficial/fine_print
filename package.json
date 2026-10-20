@@ -17,6 +17,7 @@
     "admin": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/admin.ts",
     "newsletter": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/newsletter.ts",
     "status": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/status.ts",
+    "import": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/import-record.ts",
     "test": "node --test 'src/**/*.test.ts'"
   },
   "dependencies": {
