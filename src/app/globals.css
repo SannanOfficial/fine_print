@@ -398,22 +398,47 @@ figcaption {
   max-width: 36rem;
   margin: 1.25rem auto 0;
 }
-/* Ways into the record, right under the opening. */
-.hero-links {
-  margin-top: 1.5rem;
-  display: flex;
-  flex-wrap: wrap;
+@media (max-width: 30rem) {
+  .hero .lede {
+    font-size: 1.125rem;
+  }
+}
+/* The sign-up right under the opening, and again near the end of the page. */
+.subscribe-hero,
+.subscribe-closing {
+  max-width: 34rem;
+  margin: 2rem auto 0;
+  text-align: center;
+}
+.subscribe-hero .subscribe-label,
+.subscribe-closing .subscribe-label {
+  font-size: 1.125rem;
+}
+.subscribe-hero .subscribe-row,
+.subscribe-closing .subscribe-row {
   justify-content: center;
-  gap: 0.5rem 1.75rem;
+}
+.subscribe-closing {
+  margin-top: 1.75rem;
+}
+/* Which platforms are covered, at a glance. Room is kept for it while it loads. */
+.hero-tracking {
+  max-width: 34rem;
+  min-height: 3.2em;
+  margin: 1rem auto 0;
   font-variant-caps: all-small-caps;
   letter-spacing: 0.07em;
-  font-size: 1.0625rem;
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+  text-wrap: balance;
 }
-.hero-links a::after {
-  content: " →" / "";
-  text-decoration: none;
-  display: inline-block;
-  margin-left: 0.15em;
+.hero-tracking span {
+  white-space: nowrap;
+}
+@media (max-width: 36rem) {
+  .hero-tracking {
+    min-height: 4.8em;
+  }
 }
 
 /* Figure i: a clause amended, then stamped. Plays once. */
@@ -643,6 +668,9 @@ figcaption {
 /* Figure iii: the four steps of a check, lit in turn. Plays once. */
 .steps {
   position: relative;
+}
+.steps + .prose {
+  margin-top: 2.5rem;
 }
 .steps ol {
   list-style: none;
@@ -1198,18 +1226,21 @@ del::after {
   padding-left: 0.9rem;
 }
 
-/* The desk: finished items are folded away. */
-.done-list {
+/* The desk: finished items are folded away. Older changes on the home page too. */
+.done-list,
+.more-list {
   margin-top: 1.25rem;
 }
-.done-list > summary {
+.done-list > summary,
+.more-list > summary {
   cursor: pointer;
   font-variant-caps: all-small-caps;
   letter-spacing: 0.07em;
   font-variant-numeric: lining-nums tabular-nums;
   color: var(--ink-soft);
 }
-.done-list .docket {
+.done-list .docket,
+.more-list .docket {
   margin-top: 0.75rem;
 }
 .form-inline {

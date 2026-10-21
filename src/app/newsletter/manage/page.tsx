@@ -22,7 +22,7 @@ export default function ManagePage({ searchParams }: PageProps<"/newsletter/mana
               <h1>You&rsquo;re unsubscribed</h1>
               <p className="lede" style={{ marginTop: "1rem" }}>
                 No more emails will be sent, and your address has been deleted from Fine Print. To sign up again, use
-                the form on any <Link href="/#platforms">platform&rsquo;s page</Link>.
+                the form on the <Link href="/">home page</Link> or any platform&rsquo;s page.
               </p>
             </>
           ) : (
@@ -49,7 +49,7 @@ async function Manage({ token }: { token: string }) {
         <h1>Nothing to manage</h1>
         <p className="lede" style={{ marginTop: "1rem" }}>
           This link isn&rsquo;t valid any more, or the address has already been unsubscribed. To sign up again, use the
-          form on any platform&rsquo;s page.
+          form on the <Link href="/">home page</Link> or any platform&rsquo;s page.
         </p>
       </>
     );
@@ -65,7 +65,7 @@ async function Manage({ token }: { token: string }) {
       <PreferencesForm
         token={token}
         platforms={platforms.map((p) => ({ slug: p.slug, name: p.name, kind: p.kind }))}
-        chosen={subscriber.platforms}
+        chosen={subscriber.allPlatforms ? platforms.map((p) => p.slug) : subscriber.platforms}
       />
     </>
   );

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { test } from "node:test";
 import { ObjectId } from "mongodb";
-import { digestEmail } from "../core/newsletter-email.ts";
-import { confirmToken, manageToken, readToken } from "../core/newsletter-links.ts";
+import { confirmEmail, digestEmail } from "../core/newsletter-email.ts";
+import { confirmToken, EVERY_PLATFORM, manageToken, readToken } from "../core/newsletter-links.ts";
 import type { Platform } from "../core/platforms.ts";
 import { groupChanges, maskEmail, type ChangeRow } from "./newsletter.ts";
 
@@ -24,6 +24,14 @@ test("links: genuine ones read back, tampered or expired ones don't", () => {
   const confirm = confirmToken(ID, 1, "headway", now);
   assert.equal(readToken(confirm, now)?.k, "confirm");
   assert.equal(readToken(confirm, now + 8 * 86_400_000), null, "expired after 7 days");
+});
+
+test("sign-up for every platform: the link carries it, and the email names no single platform", () => {
+  const link = readToken(confirmToken(ID, 1, EVERY_PLATFORM));
+  assert.equal(link?.k === "confirm" ? link.p : null, EVERY_PLATFORM);
+  const mail = confirmEmail({ platformName: null, confirmUrl: "https://x.example/c", siteUrl: "https://x.example" });
+  assert.match(mail.text, /when any platform it tracks changes/);
+  assert.doesNotMatch(`${mail.subject} ${mail.text} ${mail.html}`, /null|undefined/);
 });
 
 const platforms: Platform[] = [

@@ -59,10 +59,12 @@ function button(href: string, label: string): string {
 
 /* ---------- Confirming a subscription ---------- */
 
-export function confirmEmail(input: { platformName: string; confirmUrl: string; siteUrl: string }): Composed {
-  const subject = `Confirm: weekly email about ${input.platformName}'s terms`;
+/** `platformName` is null for a sign-up to every platform. */
+export function confirmEmail(input: { platformName: string | null; confirmUrl: string; siteUrl: string }): Composed {
+  const name = input.platformName;
+  const subject = name ? `Confirm: weekly email about ${name}'s terms` : "Confirm: weekly email when platforms change their terms";
   const text = [
-    `Someone, probably you, asked Fine Print to email this address when ${input.platformName} changes the terms it asks clinicians to accept.`,
+    `Someone, probably you, asked Fine Print to email this address when ${name ?? "any platform it tracks"} changes the terms it asks clinicians to accept.`,
     "",
     "You'll get one email on Mondays, and only in weeks when something changed.",
     "",
@@ -75,7 +77,7 @@ export function confirmEmail(input: { platformName: string; confirmUrl: string; 
   ].join("\n");
   const html = frame(
     subject,
-    `<p>Someone, probably you, asked Fine Print to email this address when <b>${escape(input.platformName)}</b> changes the terms it asks clinicians to accept.</p>
+    `<p>Someone, probably you, asked Fine Print to email this address when ${name ? `<b>${escape(name)}</b>` : "any platform it tracks"} changes the terms it asks clinicians to accept.</p>
 <p>You&rsquo;ll get one email on Mondays, and only in weeks when something changed.</p>
 ${button(input.confirmUrl, "Confirm subscription")}
 <p style="font-size:15px;color:${SOFT};">The button opens a page where you press &ldquo;Confirm subscription&rdquo; once more; that stops link scanners from signing you up. The link works for 7 days. If you didn&rsquo;t ask for this, ignore this email. Nothing more will be sent.</p>`,

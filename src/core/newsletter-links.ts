@@ -7,9 +7,12 @@ import { dataKey } from "./seal.ts";
  * an HMAC with FINEPRINT_DATA_KEY. Raising a subscriber's tokenVersion makes
  * every earlier link stop working.
  *
- *   confirm: add one platform. Expires after 7 days.
+ *   confirm: add one platform, or every platform (EVERY_PLATFORM). Expires after 7 days.
  *   manage:  change platforms or unsubscribe. Included in every email.
  */
+
+/** Stands for "every tracked platform, including ones added later". Never a valid platform slug. */
+export const EVERY_PLATFORM = "*";
 
 export type LinkPayload =
   | { k: "confirm"; s: string; v: number; p: string; e: number }

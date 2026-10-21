@@ -22,8 +22,24 @@ function remember(email: string) {
   }
 }
 
-/** `page` is the address of the page the form is on, so a browser without JavaScript gets its answer there. */
-export function SubscribeForm({ platformSlug, platformName, page }: { platformSlug: string; platformName: string; page: string }) {
+/**
+ * `page` is the address of the page the form is on, so a browser without
+ * JavaScript gets its answer there. `platformSlug` can be EVERY_PLATFORM, with
+ * its own `label`.
+ */
+export function SubscribeForm({
+  platformSlug,
+  platformName,
+  page,
+  label,
+  className,
+}: {
+  platformSlug: string;
+  platformName?: string;
+  page: string;
+  label?: string;
+  className?: string;
+}) {
   const [state, action, pending] = useActionState(subscribe.bind(null, platformSlug), null, page);
   const [email, setEmail] = useState("");
   const id = useId();
@@ -41,12 +57,12 @@ export function SubscribeForm({ platformSlug, platformName, page }: { platformSl
   }, []);
 
   return (
-    <form action={action} className="subscribe">
+    <form action={action} className={className ? `subscribe ${className}` : "subscribe"}>
       <label htmlFor={`${id}-email`} className="subscribe-label">
-        Get an email when {platformName} changes its terms
+        {label ?? `Get an email when ${platformName} changes its terms`}
       </label>
       <p className="hint" id={`${id}-hint`}>
-        One email on Mondays, only in weeks with a change. Unsubscribe from any email.
+        Free. One email on Mondays, only in weeks with a change. Unsubscribe from any email.
       </p>
       <div className="subscribe-row">
         <input
@@ -63,7 +79,7 @@ export function SubscribeForm({ platformSlug, platformName, page }: { platformSl
           aria-invalid={state && !state.ok ? true : undefined}
         />
         <button type="submit" className="button button-primary" disabled={pending}>
-          {pending ? "Sending…" : "Subscribe"}
+          {pending ? "Sending…" : "Get updates"}
         </button>
       </div>
       <div className="trap" aria-hidden="true">

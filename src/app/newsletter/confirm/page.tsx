@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { readToken } from "@/core/newsletter-links.ts";
+import { EVERY_PLATFORM, readToken } from "@/core/newsletter-links.ts";
 import { getPlatform } from "@/lib/registry.ts";
 import { ConfirmForm } from "../forms.tsx";
 
@@ -23,8 +23,9 @@ export default function ConfirmPage({ searchParams }: PageProps<"/newsletter/con
 async function Confirm({ token }: { token: string }) {
   await connection();
   const link = readToken(token);
-  const platform = link?.k === "confirm" ? await getPlatform(link.p) : undefined;
-  if (link?.k === "confirm" && !platform) {
+  const everything = link?.k === "confirm" && link.p === EVERY_PLATFORM;
+  const platform = link?.k === "confirm" && !everything ? await getPlatform(link.p) : undefined;
+  if (link?.k === "confirm" && !everything && !platform) {
     return (
       <>
         <h1>This platform is no longer tracked</h1>
@@ -37,13 +38,13 @@ async function Confirm({ token }: { token: string }) {
       </>
     );
   }
-  if (link?.k !== "confirm" || !platform) {
+  if (link?.k !== "confirm" || (!everything && !platform)) {
     return (
       <>
         <h1>This link has expired or isn&rsquo;t complete</h1>
         <p className="lede" style={{ marginTop: "1rem" }}>
           Confirmation links work for 7 days, and some email apps cut long links short. Sign up again from the
-          platform&rsquo;s page and we&rsquo;ll send a new one.
+          home page or a platform&rsquo;s page and we&rsquo;ll send a new one.
         </p>
         <p className="note">
           <Link href="/#platforms">All platforms</Link>
@@ -55,7 +56,8 @@ async function Confirm({ token }: { token: string }) {
     <>
       <h1>Confirm your subscription</h1>
       <p className="lede" style={{ marginTop: "1rem" }}>
-        You&rsquo;ll get an email on Monday in any week that <Link href={`/${platform.slug}`}>{platform.name}</Link>{" "}
+        You&rsquo;ll get an email on Monday in any week that{" "}
+        {platform ? <Link href={`/${platform.slug}`}>{platform.name}</Link> : <Link href="/#platforms">a platform we track</Link>}{" "}
         changes the terms it asks clinicians to accept, with a summary of each change and a link to the exact redline.
         Press the button below to start.
       </p>
