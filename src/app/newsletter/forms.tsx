@@ -75,7 +75,10 @@ export function PreferencesForm({
       <form action={action} className="form">
         <fieldset>
           <legend>Platforms you get Monday emails about</legend>
-          <p className="hint">Untick every platform and save to unsubscribe and delete your address.</p>
+          <p className="hint">
+            Ticking every platform also covers ones we start tracking later. Untick them all and save to unsubscribe
+            and delete your address.
+          </p>
           <div className="choices">
             {platforms.map((p) => (
               <label key={p.slug} className="check">

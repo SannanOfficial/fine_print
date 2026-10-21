@@ -398,134 +398,46 @@ figcaption {
   max-width: 36rem;
   margin: 1.25rem auto 0;
 }
-/* Ways into the record, right under the opening. */
-.hero-links {
-  margin-top: 1.5rem;
-  display: flex;
-  flex-wrap: wrap;
+@media (max-width: 30rem) {
+  .hero .lede {
+    font-size: 1.125rem;
+  }
+}
+/* The sign-up right under the opening, and again near the end of the page. */
+.subscribe-hero,
+.subscribe-closing {
+  max-width: 34rem;
+  margin: 2rem auto 0;
+  text-align: center;
+}
+.subscribe-hero .subscribe-label,
+.subscribe-closing .subscribe-label {
+  font-size: 1.125rem;
+}
+.subscribe-hero .subscribe-row,
+.subscribe-closing .subscribe-row {
   justify-content: center;
-  gap: 0.5rem 1.75rem;
+}
+.subscribe-closing {
+  margin-top: 1.75rem;
+}
+/* Which platforms are covered, at a glance. Room is kept for it while it loads. */
+.hero-tracking {
+  max-width: 34rem;
+  min-height: 3.2em;
+  margin: 1rem auto 0;
   font-variant-caps: all-small-caps;
   letter-spacing: 0.07em;
-  font-size: 1.0625rem;
-}
-.hero-links a::after {
-  content: " →" / "";
-  text-decoration: none;
-  display: inline-block;
-  margin-left: 0.15em;
-}
-
-/* Figure i: a clause amended, then stamped. Plays once. */
-.specimen {
-  margin-top: 3rem;
-  text-align: left;
-}
-.specimen-sheet {
-  position: relative;
-  background: var(--sheet);
-  border: 1px solid var(--rule);
-  padding: 1.75rem clamp(1.25rem, 4vw, 2.5rem) 4.5rem;
-  box-shadow: 0 1px 0 var(--rule), 0 0.5rem 0 -0.25rem var(--sheet), 0 0.5rem 0 -0.19rem var(--rule);
-}
-.specimen-ref {
   font-size: 0.9375rem;
-  font-style: italic;
   color: var(--ink-soft);
+  text-wrap: balance;
 }
-.specimen-text {
-  margin-top: 0.6rem;
-  font-size: clamp(1.25rem, 3vw, 1.5rem);
-  line-height: 1.6;
-}
-.specimen .s-del {
-  animation: s-strike 10s ease-out both;
-}
-.specimen .s-ins {
-  display: inline-block;
-  vertical-align: bottom;
+.hero-tracking span {
   white-space: nowrap;
-  overflow: hidden;
-  max-width: 12em;
 }
-.specimen .s-ins-1 {
-  animation: s-insert-1 10s ease-out both;
-}
-.specimen .s-ins-2 {
-  animation: s-insert-2 10s ease-out both;
-}
-.specimen-stamp {
-  position: absolute;
-  right: clamp(1rem, 4vw, 2rem);
-  bottom: 1rem;
-  padding: 0.3rem 0.8rem 0.35rem;
-  border: 3px double var(--del);
-  color: var(--del);
-  font-variant-caps: all-small-caps;
-  letter-spacing: 0.1em;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: center;
-  transform: rotate(-4deg);
-  animation: s-stamp 10s ease-out both;
-}
-.specimen-stamp span {
-  display: block;
-  font-variant-caps: normal;
-  letter-spacing: 0;
-  font-weight: 400;
-  font-style: italic;
-  font-size: 0.8125rem;
-}
-
-@keyframes s-strike {
-  0%,
-  12% {
-    color: var(--ink);
-    background-color: transparent;
-    background-size: 0% 1.5px;
-  }
-  22%,
-  100% {
-    color: var(--del);
-    background-color: var(--del-wash);
-    background-size: 100% 1.5px;
-  }
-}
-@keyframes s-insert-1 {
-  0%,
-  24% {
-    max-width: 0;
-    opacity: 0;
-  }
-  36%,
-  100% {
-    max-width: 12em;
-    opacity: 1;
-  }
-}
-@keyframes s-insert-2 {
-  0%,
-  38% {
-    max-width: 0;
-    opacity: 0;
-  }
-  46%,
-  100% {
-    max-width: 12em;
-    opacity: 1;
-  }
-}
-@keyframes s-stamp {
-  0%,
-  52% {
-    opacity: 0;
-    transform: rotate(-4deg) scale(1.35);
-  }
-  57%,
-  100% {
-    opacity: 1;
-    transform: rotate(-4deg) scale(1);
+@media (max-width: 36rem) {
+  .hero-tracking {
+    min-height: 4.8em;
   }
 }
 
@@ -643,6 +555,10 @@ figcaption {
 /* Figure iii: the four steps of a check, lit in turn. Plays once. */
 .steps {
   position: relative;
+}
+.steps + .prose,
+.prose + .steps {
+  margin-top: 2.5rem;
 }
 .steps ol {
   list-style: none;
@@ -1198,18 +1114,21 @@ del::after {
   padding-left: 0.9rem;
 }
 
-/* The desk: finished items are folded away. */
-.done-list {
+/* The desk: finished items are folded away. Older changes on the home page too. */
+.done-list,
+.more-list {
   margin-top: 1.25rem;
 }
-.done-list > summary {
+.done-list > summary,
+.more-list > summary {
   cursor: pointer;
   font-variant-caps: all-small-caps;
   letter-spacing: 0.07em;
   font-variant-numeric: lining-nums tabular-nums;
   color: var(--ink-soft);
 }
-.done-list .docket {
+.done-list .docket,
+.more-list .docket {
   margin-top: 0.75rem;
 }
 .form-inline {

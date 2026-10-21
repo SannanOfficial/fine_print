@@ -261,6 +261,8 @@ export interface SubscriberRecord {
   email: Binary;
   /** Platforms whose changes this person has confirmed they want. */
   platforms: string[];
+  /** Follows every tracked platform, including ones added later (signed up from the home page, or ticked them all). */
+  allPlatforms?: boolean;
   createdAt: Date;
   updatedAt: Date;
   /** Set until the first confirmation; the record is deleted automatically after it. */

@@ -167,7 +167,7 @@ export async function deletePlatform(slug: string, _previous: SimpleState, form:
   await forgetStatus(c, { _id: { $regex: `^${slug}/` } });
   // Nobody can follow a platform that's gone; addresses left following nothing are deleted.
   await c.subscribers.updateMany({ platforms: slug }, { $pull: { platforms: slug } });
-  await c.subscribers.deleteMany({ platforms: { $size: 0 }, expiresAt: null });
+  await c.subscribers.deleteMany({ platforms: { $size: 0 }, expiresAt: null, allPlatforms: { $ne: true } });
   registryChanged();
   redirect("/admin/platforms?deleted=1");
 }

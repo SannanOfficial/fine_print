@@ -3,7 +3,7 @@
 import { ObjectId } from "mongodb";
 import { redirect } from "next/navigation";
 import { confirmEmail } from "@/core/newsletter-email.ts";
-import { confirmToken, manageToken, readToken } from "@/core/newsletter-links.ts";
+import { confirmToken, EVERY_PLATFORM, manageToken, readToken } from "@/core/newsletter-links.ts";
 import { mailConfigured, sendMail, siteUrl as configuredSiteUrl } from "@/core/mailer.ts";
 import { COLLECTIONS, type SubscriberRecord } from "@/core/records.ts";
 import { getDb } from "@/lib/db.ts";
@@ -31,6 +31,7 @@ const emailHash = (email: string) => keyedHash(`email:${email}`);
 
 export type SubscribeState = { ok: boolean; message: string; key: number; email?: string } | null;
 
+/** `platformSlug` is one platform, or EVERY_PLATFORM for the sign-up on the home page. */
 export async function subscribe(platformSlug: string, _previous: SubscribeState, form: FormData): Promise<SubscribeState> {
   const raw = form.get("email");
   const email = (typeof raw === "string" ? raw : "").trim().toLowerCase();
@@ -40,8 +41,9 @@ export async function subscribe(platformSlug: string, _previous: SubscribeState,
   // Bots fill in every field, including this one, which people never see.
   if (form.get("website")) return sent;
   if (!email || email.length > 254 || !EMAIL.test(email)) return reply(false, "Enter a valid email address.");
-  const platform = await getPlatform(platformSlug);
-  if (!platform) return reply(false, "This platform is no longer tracked.");
+  const everything = platformSlug === EVERY_PLATFORM;
+  const platform = everything ? null : await getPlatform(platformSlug);
+  if (!everything && !platform) return reply(false, "This platform is no longer tracked.");
   if (!mailConfigured()) return reply(false, "Email updates aren't switched on yet. Please try again later.");
 
   const ip = await clientIp();
@@ -84,11 +86,11 @@ export async function subscribe(platformSlug: string, _previous: SubscribeState,
   }
   if (!subscriber) return reply(false, "Something went wrong. Please try again.");
 
-  const token = confirmToken(subscriber._id.toHexString(), subscriber.tokenVersion, platform.slug);
+  const token = confirmToken(subscriber._id.toHexString(), subscriber.tokenVersion, platform?.slug ?? EVERY_PLATFORM);
   try {
     await sendMail({
       to: email,
-      ...confirmEmail({ platformName: platform.name, confirmUrl: `${siteUrl()}/newsletter/confirm?t=${token}`, siteUrl: siteUrl() }),
+      ...confirmEmail({ platformName: platform?.name ?? null, confirmUrl: `${siteUrl()}/newsletter/confirm?t=${token}`, siteUrl: siteUrl() }),
     });
   } catch (error) {
     console.error(`Newsletter confirmation email failed: ${(error as Error).message}`);
@@ -103,20 +105,27 @@ export type LinkState = { ok: boolean; message: string; manageUrl?: string } | n
 
 export async function confirmSubscription(token: string): Promise<LinkState> {
   const link = readToken(token);
-  if (link?.k !== "confirm") return { ok: false, message: "This link has expired or isn't valid. Sign up again from the platform's page." };
-  const platform = await getPlatform(link.p);
-  if (!platform) return { ok: false, message: "That platform is no longer tracked." };
+  if (link?.k !== "confirm") return { ok: false, message: "This link has expired or isn't valid. Sign up again from the home page or a platform's page." };
+  const everything = link.p === EVERY_PLATFORM;
+  const platform = everything ? null : await getPlatform(link.p);
+  if (!everything && !platform) return { ok: false, message: "That platform is no longer tracked." };
+  const slugs = platform ? [platform.slug] : (await getPlatforms()).map((p) => p.slug);
 
   const result = await (await subscribers()).updateOne(
     { _id: new ObjectId(link.s), tokenVersion: link.v },
-    { $addToSet: { platforms: platform.slug }, $set: { expiresAt: null, updatedAt: new Date() } },
+    {
+      $addToSet: { platforms: { $each: slugs } },
+      $set: { expiresAt: null, updatedAt: new Date(), ...(everything ? { allPlatforms: true } : {}) },
+    },
   );
   if (result.matchedCount === 0) {
-    return { ok: false, message: "This link is no longer valid, perhaps because you unsubscribed. Sign up again from the platform's page." };
+    return { ok: false, message: "This link is no longer valid, perhaps because you unsubscribed. Sign up again from the home page or a platform's page." };
   }
   return {
     ok: true,
-    message: `Subscribed. You'll get an email in any week that ${platform.name} changes its terms.`,
+    message: platform
+      ? `Subscribed. You'll get an email in any week that ${platform.name} changes its terms.`
+      : "Subscribed. You'll get an email in any week that a platform we track changes its terms.",
     manageUrl: `/newsletter/manage?t=${manageToken(link.s, link.v)}`,
   };
 }
@@ -140,7 +149,9 @@ export async function savePreferences(token: string, _previous: LinkState, form:
     await col.deleteOne({ _id: subscriber._id });
     redirect("/newsletter/manage?left=1");
   }
-  await col.updateOne({ _id: subscriber._id }, { $set: { platforms: chosen, expiresAt: null, updatedAt: new Date() } });
+  // Ticking every platform also covers ones added later.
+  const allPlatforms = chosen.length === known.size;
+  await col.updateOne({ _id: subscriber._id }, { $set: { platforms: chosen, allPlatforms, expiresAt: null, updatedAt: new Date() } });
   return { ok: true, message: `Saved. You follow ${chosen.length} ${chosen.length === 1 ? "platform" : "platforms"}.` };
 }
 

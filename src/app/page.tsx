@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { Suspense } from "react";
+import { Fragment, Suspense } from "react";
 import { ExternalLink } from "@/components/ExternalLink.tsx";
-import { CheckTimeline, ClauseDrift, ClauseSpecimen, EmailVersusChanges, HowItWorks, TwoSources } from "@/components/Infographics.tsx";
+import { ClauseDrift, EmailVersusChanges } from "@/components/Infographics.tsx";
 import { Docket, StatusLine } from "@/components/Record.tsx";
+import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { documentKey, findDocument, type Platform } from "@/core/platforms.ts";
+import { EVERY_PLATFORM } from "@/core/newsletter-links.ts";
 import { contactEmail, GITHUB_URL, PATREON_URL, SITE_DESCRIPTION } from "@/core/site.ts";
 import { getDocumentFacts, getRecentChanges, getStatuses, type DocumentFacts, type PublicStatus } from "@/lib/data.ts";
 import { FEED } from "@/lib/meta.ts";
@@ -27,17 +29,33 @@ export default function Home() {
         <p className="eyebrow">The public record of healthcare platforms&rsquo; terms of service</p>
         <h1>The fine print keeps moving.</h1>
         <p className="lede">
-          EHRs, billing and credentialing services, telehealth networks and directories keep rewriting the terms
-          clinicians practice under. Some revisions are routine. Others test how much you will accept: rights to your
-          name and voice, shorter notice, new limits on leaving. Fine Print logs every version, word for word, so
-          that changes don&rsquo;t slip by unnoticed and the pattern is plain to everyone.
+          Healthcare platforms keep rewriting the terms clinicians practice under, sometimes asking for rights to your
+          name and voice, shorter notice or new limits on leaving. Fine Print keeps every version, word for word, and
+          shows exactly what changed.
         </p>
-        <nav className="hero-links" aria-label="Start here">
-          <a href="#platforms">Find your platform</a>
-          <a href="#changes">See recent changes</a>
-          <Link href="/submit">Share an agreement</Link>
-        </nav>
-        <ClauseSpecimen />
+        <SubscribeForm
+          platformSlug={EVERY_PLATFORM}
+          page="/"
+          label="Get an email when a platform changes its terms"
+          className="subscribe-hero"
+        />
+        <Suspense fallback={<p className="hero-tracking" aria-hidden="true" />}>
+          <TrackedNames />
+        </Suspense>
+      </section>
+
+      <section className="section" id="changes" aria-labelledby="changes-title">
+        <h2 id="changes-title">Latest changes</h2>
+        <Suspense fallback={<p className="empty">Loading the record…</p>}>
+          <RecentChanges />
+        </Suspense>
+      </section>
+
+      <section className="section" id="platforms" aria-labelledby="platforms-title">
+        <h2 id="platforms-title">Tracked platforms</h2>
+        <Suspense fallback={<p className="empty">Loading the list…</p>}>
+          <LivePlatformIndex />
+        </Suspense>
       </section>
 
       <section className="section" aria-labelledby="why-title">
@@ -85,93 +103,37 @@ export default function Home() {
         <ClauseDrift />
       </section>
 
-      <section className="section" aria-labelledby="sources-title">
-        <h2 id="sources-title">Two ways into the record</h2>
-        <div className="prose">
-          <p>
-            A public terms page is only part of the picture. Some of the most consequential terms are never posted:
-            they come by email, in a pop-up you must accept before you can sign in, or in a contract sent to one
-            group of providers. A record built only by software would miss them, so this one has two sources.
-          </p>
-        </div>
-        <TwoSources />
-        <div className="prose">
-          <p>
-            Software checks every public page it can read twice a day; the few sites that block it are captured
-            by hand. Clinicians fill in the rest. When a platform shows
-            you new terms, send them in. An editor confirms each submission with the person who sent it before it
-            joins the record, and senders are never named.
-          </p>
-          <div className="cta">
-            <Link href="/submit" className="button button-primary">
-              Share an agreement privately
-            </Link>
-            <p>It takes a few minutes. Your details are encrypted and never published.</p>
-          </div>
-        </div>
-      </section>
-
       <section className="section" aria-labelledby="how-title">
-        <h2 id="how-title">How public pages are watched</h2>
-        <HowItWorks />
-      </section>
-
-      <section className="section" aria-labelledby="often-title">
-        <h2 id="often-title">Why we check twice a day</h2>
-        <CheckTimeline />
-      </section>
-
-      <section className="section" aria-labelledby="independent-title">
-        <h2 id="independent-title">Independent, and open</h2>
+        <h2 id="how-title">How it works</h2>
         <div className="prose">
           <p>
-            Fine Print is free, open source and answers to no platform. It does not tell you what to sign. It keeps
-            an exact record, so that clinicians, professional associations and journalists can read the terms for
-            themselves and hold platforms to what they wrote.
+            Twice a day, Fine Print reads each platform&rsquo;s public terms. When the wording changes, the new
+            version is saved with its date and a redline showing exactly what was added and removed.
           </p>
           <p>
-            It is not legal advice, and the platform&rsquo;s own site is always the authority on what is in force
-            today.
+            Terms that never appear on a public page, sent by email, in an app or as a contract, come from clinicians
+            who <Link href="/submit">share them with us</Link>. An editor confirms each one with the sender, and
+            senders are never named. <Link href="/about">More on how it works</Link>.
           </p>
         </div>
       </section>
 
-      <section className="section" id="platforms" aria-labelledby="platforms-title">
-        <h2 id="platforms-title">Tracked platforms</h2>
-        <Suspense fallback={<p className="empty">Loading the list…</p>}>
-          <LivePlatformIndex />
-        </Suspense>
-      </section>
-
-      <section className="section" id="changes" aria-labelledby="changes-title">
-        <h2 id="changes-title">Recent changes</h2>
-        <Suspense fallback={<p className="empty">Loading the record…</p>}>
-          <RecentChanges />
-        </Suspense>
-      </section>
-
-      <section className="section" aria-labelledby="who-title">
-        <h2 id="who-title">Who the record is for</h2>
-        <div className="prose">
-          <p>
-            Anyone who has to decide whether to trust a platform with their practice, or who speaks for those who do.
-          </p>
-        </div>
-        <ol className="audiences">
-          {AUDIENCES.map((a) => (
-            <li key={a.who}>
-              <p className="audience-who">{a.who}</p>
-              <p className="audience-use">{a.use}</p>
-            </li>
-          ))}
-        </ol>
+      <section className="section" id="updates" aria-labelledby="updates-title">
+        <h2 id="updates-title">Never miss a change</h2>
+        <SubscribeForm
+          platformSlug={EVERY_PLATFORM}
+          page="/"
+          label="Get an email when a platform changes its terms"
+          className="subscribe-closing"
+        />
       </section>
 
       <section className="section support" aria-labelledby="support-title">
         <h2 id="support-title">Support the record</h2>
         <div className="prose">
           <p>
-            Fine Print is kept by one maintainer and the clinicians who contribute to it. There are three ways to help.
+            Fine Print is free, open source and answers to no platform. It is kept by one maintainer and the
+            clinicians who contribute to it. There are three ways to help.
           </p>
         </div>
         <div className="support-grid">
@@ -219,32 +181,23 @@ export default function Home() {
   );
 }
 
-const AUDIENCES = [
-  {
-    who: "Practices choosing software",
-    use: "Group practices and clinics comparing EHRs, billing services and networks can see how each vendor has treated its terms over time, and choose providers that behave ethically, not just ones that advertise it.",
-  },
-  {
-    who: "Clinicians asked to accept",
-    use: "Before you click “Accept and continue”, see exactly what changed since the version you signed, word for word, instead of relying on a one-line email.",
-  },
-  {
-    who: "Practice managers and compliance",
-    use: "Keep a dated copy of the agreement in force on any given day, for audits, disputes, credentialing files and contract renewals.",
-  },
-  {
-    who: "Professional associations and advocates",
-    use: "Spot a trend across platforms early, point members to the exact clause, and negotiate with evidence rather than anecdotes.",
-  },
-  {
-    who: "Journalists and researchers",
-    use: "Cite a permanent, public record of what a platform asked for and when, including versions that were quietly withdrawn.",
-  },
-  {
-    who: "Attorneys and advisers",
-    use: "Read the redline between two dates in seconds, rather than reconstructing old terms from screenshots and memory.",
-  },
-] as const;
+/** The names of the tracked platforms, so a visitor sees at once whether theirs is covered. */
+async function TrackedNames() {
+  await connection();
+  const platforms = await getPlatforms();
+  if (platforms.length === 0) return null;
+  return (
+    <p className="hero-tracking">
+      Now tracking{" "}
+      {platforms.map((p, i) => (
+        <Fragment key={p.slug}>
+          {i > 0 && " · "}
+          <span>{p.name}</span>
+        </Fragment>
+      ))}
+    </p>
+  );
+}
 
 async function LivePlatformIndex() {
   await connection();
@@ -305,5 +258,22 @@ async function RecentChanges() {
       </p>
     );
   }
-  return <Docket versions={changes} showDocument platforms={platforms} />;
+  const shown = changes.slice(0, LATEST_SHOWN);
+  const more = changes.slice(LATEST_SHOWN);
+  return (
+    <>
+      <Docket versions={shown} showDocument platforms={platforms} />
+      {more.length > 0 && (
+        <details className="more-list">
+          <summary>
+            Show {more.length} earlier {more.length === 1 ? "change" : "changes"}
+          </summary>
+          <Docket versions={more} showDocument platforms={platforms} />
+        </details>
+      )}
+    </>
+  );
 }
+
+/** Changes listed in full on the home page; earlier ones are folded away. */
+const LATEST_SHOWN = 4;

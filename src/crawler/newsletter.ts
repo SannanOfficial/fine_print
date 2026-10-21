@@ -115,7 +115,7 @@ export async function runDigest(
   { now = new Date(), dryRun = false, siteUrl, log = console.log }: { now?: Date; dryRun?: boolean; siteUrl: string; log?: (line: string) => void },
 ): Promise<DigestResult> {
   const result: DigestResult = { sent: 0, nothingNew: 0, failed: 0 };
-  const subscribers = await c.subscribers.find({ expiresAt: null, platforms: { $ne: [] } }).toArray();
+  const subscribers = await c.subscribers.find({ expiresAt: null, $or: [{ platforms: { $ne: [] } }, { allPlatforms: true }] }).toArray();
   if (subscribers.length === 0) {
     log("No confirmed subscribers.");
     return result;
@@ -145,7 +145,8 @@ export async function runDigest(
 
   for (const s of subscribers) {
     const since = sinceFor(s);
-    const groups = groupChanges(s.platforms, changes, platforms, summaries, since);
+    const follows = s.allPlatforms ? platforms.map((p) => p.slug) : s.platforms;
+    const groups = groupChanges(follows, changes, platforms, summaries, since);
     const id = s._id.toHexString();
 
     if (groups.length === 0) {

@@ -157,7 +157,7 @@ Clinicians can send terms or policy updates they were shown privately at `/submi
 
 ## Newsletter
 
-Anyone can subscribe on a platform's page (or any of its documents' pages) to a weekly email about that platform. The address they type is kept in the browser tab's `sessionStorage` and filled in on the next platform's form, still editable.
+Anyone can subscribe on the home page to a weekly email about every tracked platform (including ones added later), or on a platform's page (or any of its documents' pages) to that platform alone. Ticking every platform on the manage page counts as following everything. The address they type is kept in the browser tab's `sessionStorage` and filled in on the next platform's form, still editable.
 
 - **Confirmed first.** A sign-up only sends a confirmation email. Nothing else is sent until its owner clicks the link and presses **Confirm** (a plain visit changes nothing, so link scanners can't confirm). Unconfirmed sign-ups delete themselves after 7 days. The reply is the same whether or not an address is already subscribed, and sign-ups are limited per address and per IP.
 - **Private.** Addresses are encrypted with `FINEPRINT_DATA_KEY`, and found by a keyed hash. Links in emails are signed with the same key, so they can't be guessed or altered.
