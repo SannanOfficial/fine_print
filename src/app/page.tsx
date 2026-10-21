@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Fragment, Suspense } from "react";
 import { ExternalLink } from "@/components/ExternalLink.tsx";
-import { ClauseDrift, ClauseSpecimen, EmailVersusChanges, HowItWorks } from "@/components/Infographics.tsx";
+import { ClauseDrift, EmailVersusChanges } from "@/components/Infographics.tsx";
 import { Docket, StatusLine } from "@/components/Record.tsx";
 import { SubscribeForm } from "@/components/SubscribeForm.tsx";
 import { documentKey, findDocument, type Platform } from "@/core/platforms.ts";
@@ -42,7 +42,6 @@ export default function Home() {
         <Suspense fallback={<p className="hero-tracking" aria-hidden="true" />}>
           <TrackedNames />
         </Suspense>
-        <ClauseSpecimen />
       </section>
 
       <section className="section" id="changes" aria-labelledby="changes-title">
@@ -106,13 +105,15 @@ export default function Home() {
 
       <section className="section" aria-labelledby="how-title">
         <h2 id="how-title">How it works</h2>
-        <HowItWorks />
         <div className="prose">
           <p>
-            Public pages are checked twice a day; the few sites that block software are captured by hand. Terms sent
-            privately, by email, in an app or as a contract, come from clinicians who{" "}
-            <Link href="/submit">share them with us</Link>. An editor confirms each one with the sender, and senders
-            are never named. <Link href="/about">More on how it works</Link>.
+            Twice a day, Fine Print reads each platform&rsquo;s public terms. When the wording changes, the new
+            version is saved with its date and a redline showing exactly what was added and removed.
+          </p>
+          <p>
+            Terms that never appear on a public page, sent by email, in an app or as a contract, come from clinicians
+            who <Link href="/submit">share them with us</Link>. An editor confirms each one with the sender, and
+            senders are never named. <Link href="/about">More on how it works</Link>.
           </p>
         </div>
       </section>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckTimeline, TwoSources } from "@/components/Infographics.tsx";
+import { CheckTimeline, HowItWorks, TwoSources } from "@/components/Infographics.tsx";
 import { pageMetadata } from "@/lib/meta.ts";
 import { breadcrumbs, JsonLd, webPage } from "@/lib/structured-data.tsx";
 
@@ -28,7 +28,9 @@ export default function About() {
           record, so that clinicians, professional associations and journalists can read the terms for themselves and
           hold platforms to what they wrote.
         </p>
-
+      </div>
+      <HowItWorks />
+      <div className="prose">
         <h2>What we capture</h2>
         <p>
           Documents the platforms publish on their own websites, and agreements clinicians send us that a platform

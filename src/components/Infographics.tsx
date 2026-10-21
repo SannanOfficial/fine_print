@@ -1,36 +1,10 @@
 import { Animate } from "./Animate.tsx";
 
 /*
- * Explanatory figures for the home page. All motion is CSS (see globals.css).
+ * Explanatory figures for the home page and /about. All motion is CSS (see globals.css).
  * Every element's resting style is its final state, so with reduced motion
  * the reader sees the finished picture.
  */
-
-/** A clause being amended, then stamped as recorded. Plays once. */
-export function ClauseSpecimen() {
-  return (
-    <Animate className="specimen">
-      <figure>
-        <div className="specimen-sheet">
-          <p className="specimen-ref">§ 7.1 &ensp;License to provider materials</p>
-          <p className="specimen-text">
-            You grant us a <del className="s-del">limited, revocable</del>{" "}
-            <ins className="s-ins s-ins-1">perpetual, irrevocable</ins> license to use your name, photo
-            <ins className="s-ins s-ins-2">, videos</ins> and voice recordings.
-          </p>
-          <p className="specimen-stamp" aria-hidden="true">
-            Change recorded
-            <span>17 October 2026</span>
-          </p>
-        </div>
-        <figcaption>
-          An illustrative clause. Removed words are <del>struck through in red</del>; added words are{" "}
-          <ins>underlined in blue</ins>.
-        </figcaption>
-      </figure>
-    </Animate>
-  );
-}
 
 /** The one-line email next to the changes it announces. Plays once. */
 export function EmailVersusChanges() {
@@ -81,7 +55,7 @@ export function EmailVersusChanges() {
         </div>
         <figcaption>
           An illustrative example, not taken from any one platform. The email runs to a few lines; the changes can
-          run to pages.
+          run to pages. Removed words are <del>struck through in red</del>; added words are <ins>underlined in blue</ins>.
         </figcaption>
       </figure>
     </Animate>
