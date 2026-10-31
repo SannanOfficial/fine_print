@@ -28,7 +28,7 @@ import { ObjectId } from "mongodb";
 import { diffDocuments, summarize } from "../src/core/diff.ts";
 import { sha256 } from "../src/core/hash.ts";
 import { documentProblems, type TrackedDocument } from "../src/core/platforms.ts";
-import type { CaptureMethod, VersionRecord } from "../src/core/records.ts";
+import { IMPORTED, type CaptureMethod, type VersionRecord } from "../src/core/records.ts";
 import { acquireLock, collections, connectWriter, releaseLock } from "../src/crawler/db.ts";
 
 const { values: args, positionals } = parseArgs({ allowPositionals: true, options: { "dry-run": { type: "boolean", default: false } } });
@@ -126,7 +126,7 @@ try {
         method: v.method,
         previousId: previous?._id ?? null,
         stats: previous ? summarize(diffDocuments(previous.content, v.content)) : null,
-        recordedBy: "import",
+        recordedBy: IMPORTED,
         ...(v.datedOn ? { datedOn: v.datedOn } : {}),
       };
       await c.versions.insertOne(record);

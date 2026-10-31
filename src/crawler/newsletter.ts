@@ -3,7 +3,7 @@ import { digestEmail, type DigestGroup } from "../core/newsletter-email.ts";
 import { manageToken } from "../core/newsletter-links.ts";
 import { sendMail } from "../core/mailer.ts";
 import type { Platform } from "../core/platforms.ts";
-import type { ChangeStats, ChangeSummaryRecord } from "../core/records.ts";
+import { IMPORTED, type ChangeStats, type ChangeSummaryRecord } from "../core/records.ts";
 import { unseal } from "../core/seal.ts";
 import { loadPlatforms, type Collections } from "./db.ts";
 
@@ -57,6 +57,7 @@ export interface ChangeRow {
   capturedAt: Date;
   stats: ChangeStats | null;
   datedOn?: string | null;
+  recordedBy?: string;
 }
 
 type Summary = Pick<ChangeSummaryRecord, "headline" | "points" | "state" | "model">;
@@ -79,6 +80,9 @@ export function groupChanges(
       const doc = p.documents.find((d) => d.slug === c.document);
       // Only links or formatting changed: nothing worth an email.
       if (!doc || noWordingChanged(c.stats)) return [];
+      // Earlier history imported when a document joined the record, even if the
+      // import ran this week: the change itself happened before, so it isn't news.
+      if (c.recordedBy === IMPORTED) return [];
       const s = summaries.get(c._id.toHexString());
       return [
         {
@@ -131,7 +135,7 @@ export async function runDigest(
     c.versions
       .find(
         { previousId: { $ne: null }, capturedAt: { $gt: earliest, $lte: until } },
-        { projection: { platform: 1, document: 1, capturedAt: 1, stats: 1, datedOn: 1 } },
+        { projection: { platform: 1, document: 1, capturedAt: 1, stats: 1, datedOn: 1, recordedBy: 1 } },
       )
       .toArray() as Promise<ChangeRow[]>,
   ]);
@@ -141,7 +145,11 @@ export async function runDigest(
         .toArray()
     : [];
   const summaries = new Map(summaryRows.map((s) => [s._id.toHexString(), s as Summary]));
-  log(`${changes.length} changes recorded since ${earliest.toISOString()}; ${subscribers.length} subscribers.`);
+  const imported = changes.filter((v) => v.recordedBy === IMPORTED).length;
+  log(
+    `${changes.length} changes recorded since ${earliest.toISOString()}` +
+      `${imported ? ` (${imported} of them imported history, which is never emailed)` : ""}; ${subscribers.length} subscribers.`,
+  );
 
   for (const s of subscribers) {
     const since = sinceFor(s);

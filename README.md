@@ -133,7 +133,7 @@ npm run import -- plan.json --dry-run
 npm run import -- plan.json
 ```
 
-The format is described at the top of `scripts/import-record.ts`. A history marked `replace` takes the place of the versions recorded so far, so do this only before anyone relies on those versions' addresses. Running the same plan again keeps the versions as they are and only refreshes AI summaries no editor has touched. Single events can also be added and removed on the platform's admin page, under **Reported events**.
+The format is described at the top of `scripts/import-record.ts`. A history marked `replace` takes the place of the versions recorded so far, so do this only before anyone relies on those versions' addresses. Running the same plan again keeps the versions as they are and only refreshes AI summaries no editor has touched. Imported versions are never sent in the weekly email, even when the import runs that week: they are history, not news. Single events can also be added and removed on the platform's admin page, under **Reported events**.
 
 ## Change summaries
 
@@ -161,7 +161,7 @@ Anyone can subscribe on the home page to a weekly email about every tracked plat
 
 - **Confirmed first.** A sign-up only sends a confirmation email. Nothing else is sent until its owner clicks the link and presses **Confirm** (a plain visit changes nothing, so link scanners can't confirm). Unconfirmed sign-ups delete themselves after 7 days. The reply is the same whether or not an address is already subscribed, and sign-ups are limited per address and per IP.
 - **Private.** Addresses are encrypted with `FINEPRINT_DATA_KEY`, and found by a keyed hash. Links in emails are signed with the same key, so they can't be guessed or altered.
-- **Weekly.** `npm run newsletter` emails each subscriber the changes recorded since their last email on the platforms they follow: the date, how much changed, the AI summary (labelled, and left out if an editor hid it), and a link to the redline. **Anyone with no changes gets nothing.** Each subscriber's place only moves on once their email is sent, so a failed send is retried next week and running it twice sends nothing twice. `--dry-run` shows who would get what.
+- **Weekly.** `npm run newsletter` emails each subscriber the changes recorded since their last email on the platforms they follow: the date, how much changed, the AI summary (labelled, and left out if an editor hid it), and a link to the redline. **Anyone with no changes gets nothing.** Earlier versions added with `npm run import` are left out (see above). Each subscriber's place only moves on once their email is sent, so a failed send is retried next week and running it twice sends nothing twice. `--dry-run` shows who would get what.
 - **Bounces.** An address the receiving server refuses outright three weeks running is deleted. A problem on our side (a wrong SMTP password, the provider refusing the sender address, no connection) stops the run instead, and no subscriber is counted as bouncing.
 - **Easy to leave.** Every email links to a page to change platforms or unsubscribe (which deletes the address), and carries one-click unsubscribe headers for mail apps.
 

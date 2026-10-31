@@ -5,6 +5,7 @@ import { ObjectId } from "mongodb";
 import { confirmEmail, digestEmail } from "../core/newsletter-email.ts";
 import { confirmToken, EVERY_PLATFORM, manageToken, readToken } from "../core/newsletter-links.ts";
 import type { Platform } from "../core/platforms.ts";
+import { IMPORTED } from "../core/records.ts";
 import { groupChanges, maskEmail, type ChangeRow } from "./newsletter.ts";
 
 process.env.FINEPRINT_DATA_KEY ??= randomBytes(32).toString("base64");
@@ -56,6 +57,19 @@ test("digest: only followed platforms, only since the last email, untracked docu
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].changes.map((c) => c.versionId), [fresh._id.toHexString()]);
   assert.deepEqual(groupChanges(["headway"], [old], platforms, new Map(), since), [], "nothing new means nothing to send");
+});
+
+test("digest: history imported this week is not news; changes found this week are", () => {
+  const since = new Date(Date.UTC(2026, 9, 5));
+  const imported = { ...change("headway", "terms", 12), recordedBy: IMPORTED };
+  const byHand = { ...change("headway", "terms", 13), recordedBy: "editor@example.com" };
+  const crawled = change("headway", "terms", 14);
+  const groups = groupChanges(["headway"], [imported, byHand, crawled], platforms, new Map(), since);
+  assert.deepEqual(
+    groups[0].changes.map((c) => c.versionId),
+    [byHand._id.toHexString(), crawled._id.toHexString()],
+  );
+  assert.deepEqual(groupChanges(["headway"], [imported], platforms, new Map(), since), [], "an import alone sends nothing");
 });
 
 test("digest: hidden summaries are left out; labels say who wrote them", () => {
