@@ -68,6 +68,13 @@ export interface ChangeStats {
   changed: number;
 }
 
+/**
+ * recordedBy on versions loaded by scripts/import-record.ts: earlier history,
+ * such as Internet Archive copies, added when a document joins the record.
+ * It is never news, so the weekly email leaves it out.
+ */
+export const IMPORTED = "import";
+
 export interface VersionRecord {
   _id: ObjectId;
   platform: string;
@@ -83,7 +90,7 @@ export interface VersionRecord {
   /** Where the text was published. Null when it was never public (for example, sent by email). */
   sourceUrl: string | null;
   method: CaptureMethod;
-  /** Admin who recorded it by hand, if any. Never shown publicly. */
+  /** Admin who recorded it by hand, or IMPORTED for earlier history. Never shown publicly. */
   recordedBy?: string;
   /**
    * The date printed on the document or on the email that carried it
