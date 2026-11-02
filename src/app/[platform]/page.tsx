@@ -93,6 +93,9 @@ async function PlatformView({ slug }: { slug: string }) {
         </ExternalLink>
       </p>
 
+      {/* The same sign-up as at the end of the page, for readers who don't scroll that far. */}
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={path} />
+
       <StandingPanel standing={standing} name={platform.name} pdfHref={`/${platform.slug}/timeline.pdf`} />
 
       <section className="section" aria-labelledby="timeline-title">
@@ -146,7 +149,7 @@ async function PlatformView({ slug }: { slug: string }) {
         )}
       </section>
 
-      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={`/${platform.slug}`} />
+      <SubscribeForm platformSlug={platform.slug} platformName={platform.name} page={path} />
     </>
   );
 }
